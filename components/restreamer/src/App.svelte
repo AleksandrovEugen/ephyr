@@ -18,6 +18,7 @@
   import InputModal from './InputModal.svelte';
   import OutputModal from './OutputModal.svelte';
   import PasswordModal from './PasswordModal.svelte';
+  import ExportModal from './ExportModal.svelte';
   import Restream from './Restream.svelte';
 
   UIkit.use(Icons);
@@ -93,6 +94,9 @@
       {/key}
       <InputModal public_host={$info.data.info.publicHost} />
       <OutputModal />
+      {#if isOnline && $state.data}
+        <ExportModal full_state={$state.data.restreams}/>
+      {/if}
       <PasswordModal
         current_hash={$info.data.info.passwordHash}
         bind:visible={openPasswordModal}

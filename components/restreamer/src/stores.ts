@@ -2,6 +2,8 @@ import { writable, get, Writable } from 'svelte/store';
 
 import { sanitizeLabel, sanitizeUrl } from './util';
 
+import * as spec from './spec';
+
 // Copied from 'svelte/store' as cannot be imported.
 // See: https://github.com/sveltejs/svelte/pull/5887
 /** Callback to inform of a value updates. */
@@ -384,11 +386,113 @@ export class OutputModal implements Writable<OutputModalState> {
 }
 
 /**
- * Global singleton instance of [[`InputModal`]] used by this application.
+ * State of the modal window for adding exporting/importing `Inputs`s.
+ */
+export class ExportModalState {
+  /**
+   * ID of the `Input` to operate on.
+   */
+  input_id: string | null = null;
+
+  /**
+   * Current JSON value of the operated `Input`'s spec.
+   */
+  spec: string = '';
+
+  /**
+   * Previous JSON value of the operated `Input`'s spec.
+   */
+  prev_spec: string = '';
+
+  /**
+   * Indicator whether the [[`ExportModalModal`]] is visible (opened) at the
+   * moment.
+   */
+  visible: boolean = false;
+}
+
+/**
+ * Shared reactive state of the modal window for exporting/importing `Inputs`s.
+ */
+export class ExportModal implements Writable<ExportModalState> {
+  private state: Writable<ExportModalState> = writable(new ExportModalState());
+
+  /** @inheritdoc */
+  subscribe(
+    run: Subscriber<ExportModalState>,
+    invalidate?: Invalidator<ExportModalState>
+  ): Unsubscriber {
+    return this.state.subscribe(run, invalidate);
+  }
+
+  /** @inheritdoc */
+  set(v: ExportModalState) {
+    this.state.set(v);
+  }
+
+  /** @inheritdoc */
+  update(updater: Updater<ExportModalState>) {
+    this.state.update(updater);
+  }
+
+  /**
+   * Retrieves and returns current [[`ExportModalState`]].
+   *
+   * @returns    Current value of [[`ExportModalState`]].
+   */
+  get(): ExportModalState {
+    return get(this.state);
+  }
+
+  /**
+   * Opens this [[`ExportModal`]] window for exporting/importing an `Input`.
+   *
+   * @param id       ID of the `Input` to be exported/imported.
+   * @param value    Current `Input`'s spec received via GraphQL API.
+   */
+  open(id: string, value: any) {
+    const spec = this.toJson(value);
+    this.update((v) => {
+      v.input_id = id;
+      v.spec = spec;
+      v.prev_spec = spec;
+      v.visible = true;
+      return v;
+    });
+  }
+
+  /**
+   * Closes this [[`ExportModal`]] window.
+   */
+  close() {
+    this.update((v) => {
+      v.input_id = null;
+      v.spec = '';
+      v.prev_spec = '';
+      v.visible = false;
+      return v;
+    });
+  }
+
+  toJson(val: any): string {
+    return JSON.stringify(new spec.Restream(val), null, 2);
+  }
+}
+
+/**
+ * Global singleton instance of an [[`InputModal`]] window used by this
+ * application.
  */
 export const inputModal = new InputModal();
 
 /**
- * Global singleton instance of [[`OutputModal`]] used by this application.
+ * Global singleton instance of an [[`OutputModal`]] window used by this
+ * application.
  */
 export const outputModal = new OutputModal();
+
+/**
+ * Global singleton instance of an [[`ExportModal`]] window used by this
+ * application.
+ */
+export const exportModal = new ExportModal();

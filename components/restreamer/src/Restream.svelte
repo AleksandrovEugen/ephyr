@@ -13,7 +13,7 @@
 
   import { showError } from './util';
 
-  import { inputModal, outputModal } from './stores';
+  import { inputModal, outputModal, exportModal } from './stores';
 
   import Output from './Output.svelte';
   import Toggle from './Toggle.svelte';
@@ -115,6 +115,15 @@
     >
       <i class="fas fa-plus" />&nbsp;<span>Output</span>
     </button>
+
+    <a
+      class="export-import"
+      href="/"
+      on:click|preventDefault={() => exportModal.open(value.id, value)}
+      title="Export/Import"
+    >
+      <i class="fas fa-share-square" />
+    </a>
 
     {#if !!value.label}
       <span class="label">{value.label}</span>
@@ -278,6 +287,21 @@
         &:hover
           color: inherit
           text-decoration: none
+
+    .export-import
+      position: absolute
+      right: -25px
+      opacity: 0
+      transition: opacity .3s ease
+      color: #666
+      outline: none
+      &:hover
+        text-decoration: none
+        color: #444
+        opacity: 1
+    &:hover
+      .export-import
+        opacity: 1
 
     .fa-arrow-down, .fa-arrow-right
       font-size: 14px
