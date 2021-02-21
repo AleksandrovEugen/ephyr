@@ -23,7 +23,7 @@ export class Restream {
 }
 
 export class PushInput {
-  kind: string = "PushInput";
+  kind: string = 'PushInput';
   name: string;
 
   constructor(val: any) {
@@ -32,7 +32,7 @@ export class PushInput {
 }
 
 export class FailoverPushInput {
-  kind: string = "FailoverPushInput";
+  kind: string = 'FailoverPushInput';
   name: string;
 
   constructor(val: any) {
@@ -41,7 +41,7 @@ export class FailoverPushInput {
 }
 
 export class PullInput {
-  kind: string = "PullInput";
+  kind: string = 'PullInput';
   src: URL;
 
   constructor(val: any) {

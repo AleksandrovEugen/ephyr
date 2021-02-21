@@ -20,9 +20,7 @@
   );
 
   let invalidSpec = null;
-  onDestroy(
-    value.subscribe((v) => validateSpec(v.spec))
-  );
+  onDestroy(value.subscribe((v) => validateSpec(v.spec)));
   function validateSpec(v) {
     try {
       JSON.parse(v);
@@ -46,9 +44,7 @@
 <template>
   <div class="uk-modal" class:uk-open={$value.visible} on:click={onAreaClick}>
     <div class="uk-modal-dialog uk-modal-body">
-      <h2 class="uk-modal-title">
-        Export or import as JSON
-      </h2>
+      <h2 class="uk-modal-title">Export or import as JSON</h2>
       <button
         class="uk-modal-close-outside"
         uk-close
@@ -65,8 +61,7 @@
           placeholder="JSON..."
         />
         {#if !!invalidSpec}
-          <span class="uk-form-danger spec-err">{invalidSpec}</span
-          >
+          <span class="uk-form-danger spec-err">{invalidSpec}</span>
         {/if}
       </fieldset>
 

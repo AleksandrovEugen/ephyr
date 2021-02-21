@@ -13,7 +13,7 @@
   import UIkit from 'uikit';
   import Icons from 'uikit/dist/js/uikit-icons';
 
-  import { inputModal } from './stores';
+  import { inputModal, exportModal } from './stores';
 
   import InputModal from './InputModal.svelte';
   import OutputModal from './OutputModal.svelte';
@@ -95,7 +95,15 @@
       <InputModal public_host={$info.data.info.publicHost} />
       <OutputModal />
       {#if isOnline && $state.data}
-        <ExportModal full_state={$state.data.restreams}/>
+        <ExportModal full_state={$state.data.restreams} />
+        <a
+          class="export-import-all"
+          href="/"
+          on:click|preventDefault={() => exportModal.open(null, $state.data.restreams)}
+          title="Export/Import"
+        >
+          <i class="fas fa-share-square" />
+        </a>
       {/if}
       <PasswordModal
         current_hash={$info.data.info.passwordHash}
@@ -146,6 +154,7 @@
     color: #666
 
   header
+    position: relative
     padding: 10px
     height: $header_height - 2 * @padding
 
@@ -185,6 +194,22 @@
         bottom: -6px
         left: 68px
         color: #999
+
+    .export-import-all
+      position: absolute
+      top: 18px
+      right: 15px
+      opacity: 0
+      transition: opacity .3s ease
+      color: #666
+      outline: none
+      &:hover
+        text-decoration: none
+        color: #444
+        opacity: 1
+    &:hover
+      .export-import-all
+        opacity: 1
 
   main
     min-height: "calc(100vh - %s)" % ($header_height + $footer_height)

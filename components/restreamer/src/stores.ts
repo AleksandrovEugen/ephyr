@@ -450,7 +450,7 @@ export class ExportModal implements Writable<ExportModalState> {
    * @param id       ID of the `Input` to be exported/imported.
    * @param value    Current `Input`'s spec received via GraphQL API.
    */
-  open(id: string, value: any) {
+  open(id: string | null, value: any) {
     const spec = this.toJson(value);
     this.update((v) => {
       v.input_id = id;
@@ -474,8 +474,19 @@ export class ExportModal implements Writable<ExportModalState> {
     });
   }
 
+  /**
+   * JSONifies the given `Restream` (or a list of them) received from GraphQL
+   * API into the appropriate [[`spec.Restream`]].
+   * @param val
+   */
   toJson(val: any): string {
-    return JSON.stringify(new spec.Restream(val), null, 2);
+    return JSON.stringify(
+      Array.isArray(val)
+        ? val.map((v) => new spec.Restream(v))
+        : new spec.Restream(val),
+      null,
+      2
+    );
   }
 }
 
