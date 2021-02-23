@@ -12,221 +12,7 @@
     "types": [
       {
         "kind": "SCALAR",
-        "name": "Boolean",
-        "description": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT",
-        "name": "Output",
-        "description": "Destination that `Restream` should restream a live RTMP stream to.",
-        "fields": [
-          {
-            "name": "id",
-            "description": "Unique ID of this `Output`.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "OutputId",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "dst",
-            "description": "URL to push a live stream on to.\n\nAt the moment only [RTMP] and [Icecast] are supported.\n\n[Icecast]: https://icecast.org\n[RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Url",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "label",
-            "description": "Optional label of this `Output`.",
-            "args": [],
-            "type": {
-              "kind": "SCALAR",
-              "name": "String",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "volume",
-            "description": "Volume rate of this `Output`'s audio tracks when mixed with\n`Output.mixins`.\n\nHas no effect when there is no `Output.mixins`.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Volume",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "mixins",
-            "description": "`Mixin`s to mix this `Output` with before restream to the destination.\n\nIf empty, then no mixing is performed and restreaming is as cheap as\npossible (just copying bytes \"as is\").",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "LIST",
-                "name": null,
-                "ofType": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "OBJECT",
-                    "name": "Mixin",
-                    "ofType": null
-                  }
-                }
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "enabled",
-            "description": "Indicator whether this `Output` is enabled, so performs a live RTMP\nstream restream to destination.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Boolean",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "status",
-            "description": "`Status` of this `Output` indicating whether it pushes media traffic to\ndestination.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "ENUM",
-                "name": "Status",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR",
         "name": "OutputId",
-        "description": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT",
-        "name": "__InputValue",
-        "description": null,
-        "fields": [
-          {
-            "name": "name",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "description",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "SCALAR",
-              "name": "String",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "type",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "__Type",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "defaultValue",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "SCALAR",
-              "name": "String",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR",
-        "name": "String",
         "description": null,
         "fields": null,
         "inputFields": null,
@@ -245,227 +31,12 @@
         "possibleTypes": null
       },
       {
-        "kind": "OBJECT",
-        "name": "PullInput",
-        "description": "`Input` pulling a live RTMP stream from a remote server.",
-        "fields": [
-          {
-            "name": "src",
-            "description": "URL of a live stream to be pulled from.\n\nAt the moment only [RTMP] is supported.\n\n[RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Url",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "status",
-            "description": "`Status` of this `PullInput` indicating whether it performs pulling.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "ENUM",
-                "name": "Status",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT",
-        "name": "Mixin",
-        "description": "Additional source for an `Output` to be mixed with before re-streamed to the\ndestination.",
-        "fields": [
-          {
-            "name": "id",
-            "description": "Unique ID of this `Mixin`.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "MixinId",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "src",
-            "description": "URL of the source to be mixed in.\n\nAt the moment, only [TeamSpeak] is supported.\n\n[TeamSpeak]: https://teamspeak.com",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Url",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "volume",
-            "description": "Volume rate of this `Mixin`'s audio tracks to mix them with.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Volume",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "delay",
-            "description": "Delay that this `Mixin` should wait before mixed with an `Output`.\n\nVery useful to fix de-synchronization issues and correct timings between\n`Mixin` and its `Output`.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Delay",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT",
-        "name": "__Field",
+        "kind": "SCALAR",
+        "name": "Label",
         "description": null,
-        "fields": [
-          {
-            "name": "name",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "description",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "SCALAR",
-              "name": "String",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "args",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "LIST",
-                "name": null,
-                "ofType": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "OBJECT",
-                    "name": "__InputValue",
-                    "ofType": null
-                  }
-                }
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "type",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "__Type",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "isDeprecated",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "Boolean",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "deprecationReason",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "SCALAR",
-              "name": "String",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
+        "fields": null,
         "inputFields": null,
-        "interfaces": [],
+        "interfaces": null,
         "enumValues": null,
         "possibleTypes": null
       },
@@ -483,7 +54,7 @@
               "name": null,
               "ofType": {
                 "kind": "SCALAR",
-                "name": "String",
+                "name": "InputName",
                 "ofType": null
               }
             },
@@ -545,19 +116,9 @@
         "possibleTypes": null
       },
       {
-        "kind": "SCALAR",
-        "name": "InputId",
-        "description": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
         "kind": "UNION",
         "name": "Input",
-        "description": "Source of a live RTMP stream for `Restream`.",
+        "description": "Source of a live stream for a `Restream`.",
         "fields": null,
         "inputFields": null,
         "interfaces": null,
@@ -579,6 +140,26 @@
             "ofType": null
           }
         ]
+      },
+      {
+        "kind": "SCALAR",
+        "name": "InputSrcUrl",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "InputName",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
       },
       {
         "kind": "OBJECT",
@@ -766,96 +347,6 @@
         "possibleTypes": null
       },
       {
-        "kind": "OBJECT",
-        "name": "Info",
-        "description": "Information about parameters that server operates with.",
-        "fields": [
-          {
-            "name": "publicHost",
-            "description": "Host that this server is reachable via in public.\n\nUse it for constructing URLs to this server.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "passwordHash",
-            "description": "[Argon2] hash of the password that this server's GraphQL API is\nprotected with, if any.\n\nNon-`null` value means that any request to GraphQL API should perform\n[HTTP Basic auth][1]. Any username is allowed, but the password should\nmatch this hash.\n\n[Argon2]: https://en.wikipedia.org/wiki/Argon2\n[1]: https://en.wikipedia.org/wiki/Basic_access_authentication",
-            "args": [],
-            "type": {
-              "kind": "SCALAR",
-              "name": "String",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT",
-        "name": "Subscriptions",
-        "description": null,
-        "fields": [
-          {
-            "name": "info",
-            "description": "Subscribes to updates of `Info` parameters of this server.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "Info",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "restreams",
-            "description": "Subscribes to updates of all `Restream`s happening on this server.",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "LIST",
-                "name": null,
-                "ofType": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "OBJECT",
-                    "name": "Restream",
-                    "ofType": null
-                  }
-                }
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
         "kind": "ENUM",
         "name": "Status",
         "description": "Status indicating what's going on in `Input` or `Output`.",
@@ -885,50 +376,44 @@
         "possibleTypes": null
       },
       {
-        "kind": "SCALAR",
-        "name": "Volume",
-        "description": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR",
-        "name": "MixinId",
-        "description": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR",
-        "name": "Url",
-        "description": "Url",
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
         "kind": "OBJECT",
-        "name": "PushInput",
-        "description": "`Input` receiving a live RTMP stream from a remote client on an `/in`\nendpoint.",
+        "name": "__Schema",
+        "description": null,
         "fields": [
           {
-            "name": "name",
-            "description": "Name of a live RTMP stream to expose it with for receiving and\nre-streaming media traffic.",
+            "name": "types",
+            "description": null,
             "args": [],
             "type": {
               "kind": "NON_NULL",
               "name": null,
               "ofType": {
-                "kind": "SCALAR",
-                "name": "String",
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "__Type",
+                    "ofType": null
+                  }
+                }
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "queryType",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "__Type",
                 "ofType": null
               }
             },
@@ -936,16 +421,48 @@
             "deprecationReason": null
           },
           {
-            "name": "status",
-            "description": "`Status` of this `PushInput` indicating whether it receives media\ntraffic.",
+            "name": "mutationType",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "OBJECT",
+              "name": "__Type",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "subscriptionType",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "OBJECT",
+              "name": "__Type",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "directives",
+            "description": null,
             "args": [],
             "type": {
               "kind": "NON_NULL",
               "name": null,
               "ofType": {
-                "kind": "ENUM",
-                "name": "Status",
-                "ofType": null
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "__Directive",
+                    "ofType": null
+                  }
+                }
               }
             },
             "isDeprecated": false,
@@ -979,7 +496,7 @@
             "deprecationReason": null
           },
           {
-            "name": "restreams",
+            "name": "allRestreams",
             "description": "Returns all `Restream`s happening on this server.",
             "args": [],
             "type": {
@@ -997,6 +514,92 @@
                     "ofType": null
                   }
                 }
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "exportAllRestreams",
+            "description": "Returns all `Restream`s happening on this server in an exportable JSON\nformat.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "exportRestream",
+            "description": "Returns a single `Restream` happening on this server in an exportable\nJSON format.",
+            "args": [
+              {
+                "name": "inputId",
+                "description": "ID of the `Restream` to be exported.",
+                "type": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "InputId",
+                    "ofType": null
+                  }
+                },
+                "defaultValue": null
+              }
+            ],
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "PushInput",
+        "description": "`Input` receiving a live RTMP stream from a remote client on an `/in`\nendpoint.",
+        "fields": [
+          {
+            "name": "name",
+            "description": "Name of a live stream to expose its endpoints with for receiving and\nre-streaming media traffic.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "InputName",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "status",
+            "description": "`Status` of this `PushInput` indicating whether it receives media\ntraffic.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "ENUM",
+                "name": "Status",
+                "ofType": null
               }
             },
             "isDeprecated": false,
@@ -1025,7 +628,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "Url",
+                    "name": "InputSrcUrl",
                     "ofType": null
                   }
                 },
@@ -1036,7 +639,7 @@
                 "description": "Optional label for this `Restream`.",
                 "type": {
                   "kind": "SCALAR",
-                  "name": "String",
+                  "name": "Label",
                   "ofType": null
                 },
                 "defaultValue": null
@@ -1072,7 +675,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "String",
+                    "name": "InputName",
                     "ofType": null
                   }
                 },
@@ -1083,7 +686,7 @@
                 "description": "Optional label for this `Restream`.",
                 "type": {
                   "kind": "SCALAR",
-                  "name": "String",
+                  "name": "Label",
                   "ofType": null
                 },
                 "defaultValue": null
@@ -1228,7 +831,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "Url",
+                    "name": "OutputDstUrl",
                     "ofType": null
                   }
                 },
@@ -1239,7 +842,7 @@
                 "description": "Optional label for this `Output`.",
                 "type": {
                   "kind": "SCALAR",
-                  "name": "String",
+                  "name": "Label",
                   "ofType": null
                 },
                 "defaultValue": null
@@ -1249,7 +852,7 @@
                 "description": "Optional TeamSpeak URL to mix into this `Output`.",
                 "type": {
                   "kind": "SCALAR",
-                  "name": "Url",
+                  "name": "MixinSrcUrl",
                   "ofType": null
                 },
                 "defaultValue": null
@@ -1618,13 +1221,83 @@
         "possibleTypes": null
       },
       {
-        "kind": "OBJECT",
-        "name": "__Schema",
+        "kind": "SCALAR",
+        "name": "Boolean",
         "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Output",
+        "description": "Destination that `Restream` should restream a live RTMP stream to.",
         "fields": [
           {
-            "name": "types",
-            "description": null,
+            "name": "id",
+            "description": "Unique ID of this `Output`.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "OutputId",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "dst",
+            "description": "URL to push a live stream onto.\n\nAt the moment only [RTMP] and [Icecast] are supported.\n\n[Icecast]: https://icecast.org\n[RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "OutputDstUrl",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "label",
+            "description": "Optional label of this `Output`.",
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "Label",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "volume",
+            "description": "Volume rate of this `Output`'s audio tracks when mixed with\n`Output.mixins`.\n\nHas no effect when there is no `Output.mixins`.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Volume",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "mixins",
+            "description": "`Mixin`s to mix this `Output` with before re-streaming to its\ndestination.\n\nIf empty, then no mixing is performed and re-streaming is as cheap as\npossible (just copies bytes \"as is\").",
             "args": [],
             "type": {
               "kind": "NON_NULL",
@@ -1637,7 +1310,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "OBJECT",
-                    "name": "__Type",
+                    "name": "Mixin",
                     "ofType": null
                   }
                 }
@@ -1647,7 +1320,78 @@
             "deprecationReason": null
           },
           {
-            "name": "queryType",
+            "name": "enabled",
+            "description": "Indicator whether this `Output` is enabled, so performs a live stream\nre-streaming to its destination.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "status",
+            "description": "`Status` of this `Output` indicating whether it pushes media traffic to\ndestination.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "ENUM",
+                "name": "Status",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "__InputValue",
+        "description": null,
+        "fields": [
+          {
+            "name": "name",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "description",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "type",
             "description": null,
             "args": [],
             "type": {
@@ -1663,31 +1407,68 @@
             "deprecationReason": null
           },
           {
-            "name": "mutationType",
+            "name": "defaultValue",
             "description": null,
             "args": [],
             "type": {
-              "kind": "OBJECT",
-              "name": "__Type",
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "String",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "__Field",
+        "description": null,
+        "fields": [
+          {
+            "name": "name",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "description",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
               "ofType": null
             },
             "isDeprecated": false,
             "deprecationReason": null
           },
           {
-            "name": "subscriptionType",
-            "description": null,
-            "args": [],
-            "type": {
-              "kind": "OBJECT",
-              "name": "__Type",
-              "ofType": null
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          },
-          {
-            "name": "directives",
+            "name": "args",
             "description": null,
             "args": [],
             "type": {
@@ -1701,10 +1482,97 @@
                   "name": null,
                   "ofType": {
                     "kind": "OBJECT",
-                    "name": "__Directive",
+                    "name": "__InputValue",
                     "ofType": null
                   }
                 }
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "type",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "__Type",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "isDeprecated",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "deprecationReason",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "PullInput",
+        "description": "`Input` pulling a live RTMP stream from a remote server.",
+        "fields": [
+          {
+            "name": "src",
+            "description": "URL of a live stream to be pulled from.\n\nAt the moment only [RTMP] is supported.\n\n[RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "InputSrcUrl",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "status",
+            "description": "`Status` of this `PullInput` indicating whether it performs pulling.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "ENUM",
+                "name": "Status",
+                "ofType": null
               }
             },
             "isDeprecated": false,
@@ -1713,6 +1581,101 @@
         ],
         "inputFields": null,
         "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Mixin",
+        "description": "Additional source for an `Output` to be mixed with before re-streamed to the\ndestination.",
+        "fields": [
+          {
+            "name": "id",
+            "description": "Unique ID of this `Mixin`.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "MixinId",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "src",
+            "description": "URL of the source to be mixed in.\n\nAt the moment, only [TeamSpeak] is supported.\n\n[TeamSpeak]: https://teamspeak.com",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "MixinSrcUrl",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "volume",
+            "description": "Volume rate of this `Mixin`'s audio tracks to mix them with.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Volume",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "delay",
+            "description": "Delay that this `Mixin` should wait before being mixed with an `Output`.\n\nVery useful to fix de-synchronization issues and correct timings between\n`Mixin` and its `Output`.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Delay",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "MixinSrcUrl",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "InputId",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
         "enumValues": null,
         "possibleTypes": null
       },
@@ -1773,6 +1736,126 @@
             "deprecationReason": null
           }
         ],
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "OutputDstUrl",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Info",
+        "description": "Information about parameters that server operates with.",
+        "fields": [
+          {
+            "name": "publicHost",
+            "description": "Host that this server is reachable via in public.\n\nUse it for constructing URLs to this server.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "passwordHash",
+            "description": "[Argon2] hash of the password that this server's GraphQL API is\nprotected with, if any.\n\nNon-`null` value means that any request to GraphQL API should perform\n[HTTP Basic auth][1]. Any username is allowed, but the password should\nmatch this hash.\n\n[Argon2]: https://en.wikipedia.org/wiki/Argon2\n[1]: https://en.wikipedia.org/wiki/Basic_access_authentication",
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Subscriptions",
+        "description": null,
+        "fields": [
+          {
+            "name": "info",
+            "description": "Subscribes to updates of `Info` parameters of this server.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Info",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "allRestreams",
+            "description": "Subscribes to updates of all `Restream`s happening on this server.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "Restream",
+                    "ofType": null
+                  }
+                }
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "inputFields": null,
+        "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "Volume",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "MixinId",
+        "description": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
         "possibleTypes": null
       },
       {
@@ -1922,7 +2005,7 @@
             "args": [],
             "type": {
               "kind": "SCALAR",
-              "name": "String",
+              "name": "Label",
               "ofType": null
             },
             "isDeprecated": false,
@@ -1930,7 +2013,7 @@
           },
           {
             "name": "input",
-            "description": "`Input` that live RTMP stream is received from.",
+            "description": "`Input` that a live stream is received from.",
             "args": [],
             "type": {
               "kind": "NON_NULL",
@@ -1946,7 +2029,7 @@
           },
           {
             "name": "outputs",
-            "description": "`Output`s that live RTMP stream is restreamed to.",
+            "description": "`Output`s that a live stream is re-streamed to.",
             "args": [],
             "type": {
               "kind": "NON_NULL",
@@ -1970,7 +2053,7 @@
           },
           {
             "name": "enabled",
-            "description": "Indicator whether this `Restream` is enabled, so allows to receive a\nlive RTMP stream from `Input`.",
+            "description": "Indicator whether this `Restream` is enabled, so allows to receive a\nlive stream from its `Input`.",
             "args": [],
             "type": {
               "kind": "NON_NULL",

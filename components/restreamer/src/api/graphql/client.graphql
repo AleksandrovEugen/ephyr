@@ -6,7 +6,7 @@ subscription Info {
 }
 
 subscription State {
-    restreams {
+    allRestreams {
         id
         enabled
         label
@@ -43,13 +43,21 @@ subscription State {
     }
 }
 
-mutation AddPullInput($url: Url!, $label: String, $id: InputId) {
+query ExportInput($id: InputId!) {
+    exportRestream(inputId: $id)
+}
+
+query ExportAllInputs {
+    exportAllRestreams
+}
+
+mutation AddPullInput($url: InputSrcUrl!, $label: Label, $id: InputId) {
     addPullInput(src: $url, label: $label, id: $id)
 }
 
 mutation AddPushInput(
-    $key: String!
-    $label: String
+    $key: InputName!
+    $label: Label
     $failover: Boolean!
     $id: InputId
 ) {
@@ -68,7 +76,12 @@ mutation DisableInput($id: InputId!) {
     disableInput(id: $id)
 }
 
-mutation AddOutput($input_id: InputId!, $url: Url!, $label: String, $mix: Url) {
+mutation AddOutput(
+    $input_id: InputId!
+    $url: OutputDstUrl!
+    $label: Label
+    $mix: MixinSrcUrl
+) {
     addOutput(inputId: $input_id, dst: $url, label: $label, mix: $mix)
 }
 

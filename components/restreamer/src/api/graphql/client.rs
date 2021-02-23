@@ -3,6 +3,7 @@
 //! [GraphQL]: https://graphql.com
 
 use actix_web::http::StatusCode;
+use anyhow::anyhow;
 use futures::stream::BoxStream;
 use futures_signals::signal::SignalExt as _;
 use juniper::{graphql_object, graphql_subscription, GraphQLObject, RootNode};
@@ -450,8 +451,48 @@ impl QueriesRoot {
     }
 
     /// Returns all `Restream`s happening on this server.
-    fn restreams(context: &Context) -> Vec<Restream> {
+    fn all_restreams(context: &Context) -> Vec<Restream> {
         context.state().restreams.get_cloned()
+    }
+
+    /// Returns all `Restream`s happening on this server in an exportable JSON
+    /// format.
+    fn export_all_restreams(
+        context: &Context,
+    ) -> Result<String, graphql::Error> {
+        let exported = context
+            .state()
+            .restreams
+            .get_cloned()
+            .iter()
+            .map(Restream::export)
+            .collect::<Vec<_>>();
+        serde_json::to_string(&exported)
+            .map_err(|e| anyhow!("Failed to JSON-serialize spec: {}", e).into())
+    }
+
+    /// Returns a single `Restream` happening on this server in an exportable
+    /// JSON format.
+    #[graphql(arguments(input_id(
+        description = "ID of the `Restream` to be exported."
+    )))]
+    fn export_restream(
+        input_id: InputId,
+        context: &Context,
+    ) -> Result<Option<String>, graphql::Error> {
+        context
+            .state()
+            .restreams
+            .get_cloned()
+            .into_iter()
+            .find_map(|r| {
+                (r.id == input_id).then(|| {
+                    serde_json::to_string(&r.export()).map_err(|e| {
+                        anyhow!("Failed to JSON-serialize spec: {}", e).into()
+                    })
+                })
+            })
+            .transpose()
     }
 }
 
@@ -474,7 +515,9 @@ impl SubscriptionsRoot {
     }
 
     /// Subscribes to updates of all `Restream`s happening on this server.
-    async fn restreams(context: &Context) -> BoxStream<'static, Vec<Restream>> {
+    async fn all_restreams(
+        context: &Context,
+    ) -> BoxStream<'static, Vec<Restream>> {
         context
             .state()
             .restreams

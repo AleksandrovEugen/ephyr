@@ -95,11 +95,12 @@
       <InputModal public_host={$info.data.info.publicHost} />
       <OutputModal />
       {#if isOnline && $state.data}
-        <ExportModal full_state={$state.data.restreams} />
+        <ExportModal full_state={$state.data.allRestreams} />
         <a
           class="export-import-all"
           href="/"
-          on:click|preventDefault={() => exportModal.open(null, $state.data.restreams)}
+          on:click|preventDefault={() =>
+            exportModal.open(null, '')}
           title="Export/Import"
         >
           <i class="fas fa-share-square" />
@@ -129,7 +130,7 @@
     {#if !isOnline || $state.loading}
       <div class="uk-alert uk-alert-warning loading">Loading...</div>
     {:else if isOnline && $state.data && $info.data}
-      {#each $state.data.restreams as restream}
+      {#each $state.data.allRestreams as restream}
         <Restream public_host={$info.data.info.publicHost} value={restream} />
       {/each}
     {/if}

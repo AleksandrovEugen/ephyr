@@ -2,8 +2,6 @@ import { writable, get, Writable } from 'svelte/store';
 
 import { sanitizeLabel, sanitizeUrl } from './util';
 
-import * as spec from './spec';
-
 // Copied from 'svelte/store' as cannot be imported.
 // See: https://github.com/sveltejs/svelte/pull/5887
 /** Callback to inform of a value updates. */
@@ -447,11 +445,10 @@ export class ExportModal implements Writable<ExportModalState> {
   /**
    * Opens this [[`ExportModal`]] window for exporting/importing an `Input`.
    *
-   * @param id       ID of the `Input` to be exported/imported.
-   * @param value    Current `Input`'s spec received via GraphQL API.
+   * @param id      ID of the `Input` to be exported/imported.
+   * @param spec    Current `Input`'s spec received via GraphQL API.
    */
-  open(id: string | null, value: any) {
-    const spec = this.toJson(value);
+  async open(id: string | null, spec: string) {
     this.update((v) => {
       v.input_id = id;
       v.spec = spec;
@@ -472,21 +469,6 @@ export class ExportModal implements Writable<ExportModalState> {
       v.visible = false;
       return v;
     });
-  }
-
-  /**
-   * JSONifies the given `Restream` (or a list of them) received from GraphQL
-   * API into the appropriate [[`spec.Restream`]].
-   * @param val
-   */
-  toJson(val: any): string {
-    return JSON.stringify(
-      Array.isArray(val)
-        ? val.map((v) => new spec.Restream(v))
-        : new spec.Restream(val),
-      null,
-      2
-    );
   }
 }
 

@@ -1,7 +1,7 @@
 <svelte:options immutable={true} />
 
 <script lang="js">
-  import { mutation } from 'svelte-apollo';
+  import { mutation, query, getClient } from 'svelte-apollo';
 
   import {
     DisableInput,
@@ -9,6 +9,7 @@
     RemoveInput,
     DisableAllOutputs,
     EnableAllOutputs,
+    ExportInput,
   } from './api/graphql/client.graphql';
 
   import { showError } from './util';
@@ -23,6 +24,8 @@
   const removeInputMutation = mutation(RemoveInput);
   const disableAllOutputsMutation = mutation(DisableAllOutputs);
   const enableAllOutputsMutation = mutation(EnableAllOutputs);
+
+  const apolloClient = getClient();
 
   export let public_host = 'localhost';
   export let value;
@@ -103,6 +106,23 @@
       showError(e.message);
     }
   }
+
+  async function openExportModal() {
+    let resp;
+    try {
+      resp = await apolloClient.query({
+        query: ExportInput,
+        variables: { id: value.id },
+      });
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+
+    if (!!resp.data && !!resp.data.exportRestream) {
+      exportModal.open(value.id, JSON.stringify(JSON.parse(resp.data.exportRestream), null, 2))
+    }
+  }
 </script>
 
 <template>
@@ -119,7 +139,7 @@
     <a
       class="export-import"
       href="/"
-      on:click|preventDefault={() => exportModal.open(value.id, value)}
+      on:click|preventDefault={openExportModal}
       title="Export/Import"
     >
       <i class="fas fa-share-square" />

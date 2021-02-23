@@ -26,7 +26,7 @@ use tokio::{fs, io::AsyncReadExt as _};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{display_panic, srs};
+use crate::{display_panic, spec, srs};
 
 /// Reactive application state.
 ///
@@ -605,6 +605,17 @@ impl Restream {
             }
         }
     }
+
+    /// Exports this [`Restream`] as a [`spec::Restream`].
+    #[must_use]
+    pub fn export(&self) -> spec::Restream {
+        spec::Restream {
+            label: self.label.clone(),
+            enabled: self.enabled,
+            input: self.input.export(),
+            outputs: self.outputs.iter().map(Output::export).collect(),
+        }
+    }
 }
 
 /// Source of a live stream for a `Restream`.
@@ -678,6 +689,16 @@ impl Input {
             _ => false,
         }
     }
+
+    /// Exports this [`Input`] as a [`spec::Input`].
+    #[must_use]
+    pub fn export(&self) -> spec::Input {
+        match self {
+            Self::Push(i) => i.export().into(),
+            Self::FailoverPush(i) => i.export().into(),
+            Self::Pull(i) => i.export().into(),
+        }
+    }
 }
 
 /// `Input` pulling a live RTMP stream from a remote server.
@@ -704,6 +725,15 @@ impl PullInput {
     pub fn is(&self, other: &Self) -> bool {
         self.src == other.src
     }
+
+    /// Exports this [`PullInput`] as a [`spec::PullInput`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::PullInput {
+        spec::PullInput {
+            src: self.src.clone(),
+        }
+    }
 }
 
 /// `Input` receiving a live RTMP stream from a remote client on an `/in`
@@ -728,6 +758,15 @@ impl PushInput {
     #[must_use]
     pub fn is(&self, other: &Self) -> bool {
         self.name == other.name
+    }
+
+    /// Exports this [`PushInput`] as a [`spec::PushInput`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::PushInput {
+        spec::PushInput {
+            name: self.name.clone(),
+        }
     }
 }
 
@@ -814,6 +853,15 @@ impl FailoverPushInput {
         self.main_status == Status::Online
             || self.backup_status == Status::Online
     }
+
+    /// Exports this [`FailoverPushInput`] as a [`spec::FailoverPushInput`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::FailoverPushInput {
+        spec::FailoverPushInput {
+            name: self.name.clone(),
+        }
+    }
 }
 
 /// Destination that `Restream` should restream a live RTMP stream to.
@@ -868,6 +916,18 @@ impl Output {
     pub fn is(&self, other: &Self) -> bool {
         self.dst == other.dst
     }
+
+    /// Exports this [`Output`] as a [`spec::Output`].
+    #[must_use]
+    pub fn export(&self) -> spec::Output {
+        spec::Output {
+            dst: self.dst.clone(),
+            label: self.label.clone(),
+            enabled: self.enabled,
+            volume: self.volume,
+            mixins: self.mixins.iter().map(Mixin::export).collect(),
+        }
+    }
 }
 
 /// Additional source for an `Output` to be mixed with before re-streamed to the
@@ -896,6 +956,19 @@ pub struct Mixin {
     /// `Mixin` and its `Output`.
     #[serde(default, skip_serializing_if = "Delay::is_zero")]
     pub delay: Delay,
+}
+
+impl Mixin {
+    /// Exports this [`Mixin`] as a [`spec::Mixin`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::Mixin {
+        spec::Mixin {
+            src: self.src.clone(),
+            volume: self.volume,
+            delay: self.delay,
+        }
+    }
 }
 
 /// Status indicating what's going on in `Input` or `Output`.
@@ -1010,7 +1083,8 @@ impl InputSrcUrl {
     #[inline]
     #[must_use]
     pub fn new(url: Url) -> Option<Self> {
-        (url.scheme() == "ts" && url.host().is_some()).then(|| Self(url))
+        (matches!(url.scheme(), "rtmp" | "rtmps") && url.host().is_some())
+            .then(|| Self(url))
     }
 }
 
