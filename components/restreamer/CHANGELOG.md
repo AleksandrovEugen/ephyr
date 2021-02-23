@@ -31,6 +31,9 @@ All user visible changes to this project will be documented in this file. This p
         - `mix` argument to `addOutput` ([77d25dd7], [#23]).
     - Queries:
         - `Output.volume` and `Output.mixins` fields ([77d25dd7], [#23]).
+- Deployment:
+    - Provision script for [Ubuntu] 20.04:
+        - Optional [firewalld] installation via `WITH_FIREWALLD` env var ([rev]).
 
 ### Changed
 
@@ -45,6 +48,7 @@ All user visible changes to this project will be documented in this file. This p
 [5dabcfdc]: /../../commit/5dabcfdce2420fdd43a8f4c20c2eff497e884ac3
 [77d25dd7]: /../../commit/77d25dd739d4f05b319769eddd83c01bd3a490a4
 [a3236808]: /../../commit/a3236808c43d1c5667cac4b3037d7c83edccc48f
+[rev]: /../../commit/full-rev
 
 
 
@@ -136,6 +140,7 @@ All user visible changes to this project will be documented in this file. This p
 [Basic HTTP auth]: https://en.wikipedia.org/wiki/Basic_access_authentication
 [DigitalOcean]: https://www.digitalocean.com
 [Docker]: https://www.docker.com
+[firewalld]: https://firewalld.org
 [GraphQL]: https://www.graphql.com
 [GraphQL Playground]: https://github.com/graphql/graphql-playground
 [Hetzner Cloud]: https://www.hetzner.com/cloud

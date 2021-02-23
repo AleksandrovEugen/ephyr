@@ -18,6 +18,17 @@ curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/
 apt-get -y update
 apt-get -y install podman
 
+WITH_FIREWALLD=${WITH_FIREWALLD:-0}
+if [ "$WITH_FIREWALLD" == "1" ]; then
+  # Install and setup firewalld, if required.
+  apt-get -y install firewalld
+  systemctl unmask firewalld.service
+  systemctl enable firewalld.service
+  systemctl start firewalld.service
+  firewall-cmd --zone=public --permanent --add-port=80/tcp --add-port=1935/tcp
+  firewall-cmd --reload
+fi
+
 # Install Ephyr re-streamer.
 cat <<EOF > /etc/systemd/system/ephyr-restreamer.service
 [Unit]
