@@ -8,12 +8,13 @@ use futures_signals::signal::SignalExt as _;
 use juniper::{graphql_object, graphql_subscription, GraphQLObject, RootNode};
 use once_cell::sync::Lazy;
 use rand::Rng as _;
-use regex::Regex;
-use url::Url;
 
 use crate::{
     api::graphql,
-    state::{Delay, InputId, MixinId, OutputId, Restream, Volume},
+    state::{
+        Delay, InputId, InputName, InputSrcUrl, Label, MixinId, MixinSrcUrl,
+        OutputDstUrl, OutputId, Restream, Volume,
+    },
 };
 
 use super::Context;
@@ -62,30 +63,11 @@ impl MutationsRoot {
         ),
     ))]
     fn add_pull_input(
-        src: Url,
-        label: Option<String>,
+        src: InputSrcUrl,
+        label: Option<Label>,
         id: Option<InputId>,
         context: &Context,
     ) -> Result<Option<bool>, graphql::Error> {
-        if !matches!(src.scheme(), "rtmp" | "rtmps") {
-            return Err(graphql::Error::new("INVALID_SRC_RTMP_URL")
-                .status(StatusCode::BAD_REQUEST)
-                .message(
-                    "Provided `src` is invalid: unknown scheme, allowed only: \
-                     rtmp://, rtmps://",
-                ));
-        }
-
-        if let Some(label) = &label {
-            if !LABEL_REGEX.is_match(label) {
-                return Err(graphql::Error::new("INVALID_INPUT_LABEL")
-                    .status(StatusCode::BAD_REQUEST)
-                    .message(
-                        r"Provided label is invalid: not [^,\n\t\r\f\v]{1,70}",
-                    ));
-            }
-        }
-
         match context.state().add_pull_input(src, label, id) {
             None => Ok(None),
             Some(true) => Ok(Some(true)),
@@ -126,35 +108,12 @@ impl MutationsRoot {
         ),
     ))]
     fn add_push_input(
-        name: String,
-        label: Option<String>,
+        name: InputName,
+        label: Option<Label>,
         failover: bool,
         id: Option<InputId>,
         context: &Context,
     ) -> Result<Option<bool>, graphql::Error> {
-        static NAME_REGEX: Lazy<Regex> =
-            Lazy::new(|| Regex::new("^[a-z0-9_-]{1,20}$").unwrap());
-        if name.starts_with("pull_") {
-            return Err(graphql::Error::new("INVALID_INPUT_NAME")
-                .status(StatusCode::BAD_REQUEST)
-                .message("Provided `name` is invalid: starts with 'pull_'"));
-        }
-        if !NAME_REGEX.is_match(&name) {
-            return Err(graphql::Error::new("INVALID_INPUT_NAME")
-                .status(StatusCode::BAD_REQUEST)
-                .message("Provided `name` is invalid: not [a-z0-9_-]{1,20}"));
-        }
-
-        if let Some(label) = &label {
-            if !LABEL_REGEX.is_match(label) {
-                return Err(graphql::Error::new("INVALID_INPUT_LABEL")
-                    .status(StatusCode::BAD_REQUEST)
-                    .message(
-                        r"Provided label is invalid: not [^,\n\t\r\f\v]{1,70}",
-                    ));
-            }
-        }
-
         match context.state().add_push_input(name, failover, label, id) {
             None => Ok(None),
             Some(true) => Ok(Some(true)),
@@ -229,41 +188,11 @@ impl MutationsRoot {
     ))]
     fn add_output(
         input_id: InputId,
-        dst: Url,
-        label: Option<String>,
-        mix: Option<Url>,
+        dst: OutputDstUrl,
+        label: Option<Label>,
+        mix: Option<MixinSrcUrl>,
         context: &Context,
     ) -> Result<Option<bool>, graphql::Error> {
-        if !matches!(dst.scheme(), "icecast" | "rtmp" | "rtmps") {
-            return Err(graphql::Error::new("INVALID_DST_RTMP_URL")
-                .status(StatusCode::BAD_REQUEST)
-                .message(
-                    "Provided `dst` is invalid: unknown scheme, allowed only: \
-                     rtmp://, rtmps://, icecast://",
-                ));
-        }
-
-        if let Some(label) = &label {
-            if !LABEL_REGEX.is_match(label) {
-                return Err(graphql::Error::new("INVALID_OUTPUT_LABEL")
-                    .status(StatusCode::BAD_REQUEST)
-                    .message(
-                        r"Provided label is invalid: not [^,\n\t\r\f\v]{1,70}",
-                    ));
-            }
-        }
-
-        if let Some(mix) = &mix {
-            if mix.scheme() != "ts" || mix.host().is_none() {
-                return Err(graphql::Error::new("INVALID_MIX_TS_URL")
-                    .status(StatusCode::BAD_REQUEST)
-                    .message(
-                        "Provided `mix` is invalid: unknown scheme, allowed \
-                         only: ts://",
-                    ));
-            }
-        }
-
         context
             .state()
             .add_new_output(input_id, dst, label, mix)
@@ -555,13 +484,6 @@ impl SubscriptionsRoot {
             .boxed()
     }
 }
-
-/// [`Regex`] for validating format of [`Restream::label`]/[`Output::label`].
-///
-/// [`Input::label`]: state::Input::label
-/// [`Output::label`]: state::Output::label
-static LABEL_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[^,\n\t\r\f\v]{1,70}$").unwrap());
 
 /// Information about parameters that server operates with.
 #[derive(Clone, Debug, GraphQLObject)]

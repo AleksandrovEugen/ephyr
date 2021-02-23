@@ -21,7 +21,10 @@ use uuid::Uuid;
 
 use crate::{
     display_panic,
-    state::{self, Delay, InputId, MixinId, OutputId, State, Status, Volume},
+    state::{
+        self, Delay, InputId, InputSrcUrl, MixinId, MixinSrcUrl, OutputDstUrl,
+        OutputId, State, Status, Volume,
+    },
     teamspeak,
 };
 
@@ -401,7 +404,7 @@ pub struct PullInputRestreamer {
     input_id: InputId,
 
     /// Remote [`Url`] to pull a live stream from.
-    upstream_url: Url,
+    upstream_url: InputSrcUrl,
 
     /// Local [SRS] [`Url`] to publish the pulled live stream onto.
     ///
@@ -577,7 +580,7 @@ pub struct CopyOutputRestreamer {
     output_id: OutputId,
 
     /// Remote [`Url`] to publish the pulled live stream onto.
-    downstream_url: Url,
+    downstream_url: OutputDstUrl,
 }
 
 impl CopyOutputRestreamer {
@@ -691,7 +694,7 @@ pub struct TeamspeakMixedOutputRestreamer {
     /// [TeamSpeak] [`Url`] to pull a live audio from for mixing.
     ///
     /// [TeamSpeak]: https://teamspeak.com
-    mixin_url: Url,
+    mixin_url: MixinSrcUrl,
 
     /// [`Delay`] to mix the mixed-in [TeamSpeak] live audio with.
     ///
@@ -721,7 +724,7 @@ pub struct TeamspeakMixedOutputRestreamer {
     output_id: OutputId,
 
     /// Remote [`Url`] to publish the mixed live stream onto.
-    downstream_url: Url,
+    downstream_url: OutputDstUrl,
 }
 
 impl TeamspeakMixedOutputRestreamer {

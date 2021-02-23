@@ -136,8 +136,8 @@ impl State {
     #[must_use]
     pub fn add_pull_input(
         &self,
-        src: Url,
-        label: Option<String>,
+        src: InputSrcUrl,
+        label: Option<Label>,
         update_id: Option<InputId>,
     ) -> Option<bool> {
         let mut restreams = self.restreams.lock_mut();
@@ -172,9 +172,9 @@ impl State {
     #[must_use]
     pub fn add_push_input(
         &self,
-        name: String,
+        name: InputName,
         failover: bool,
-        label: Option<String>,
+        label: Option<Label>,
         update_id: Option<InputId>,
     ) -> Option<bool> {
         let mut restreams = self.restreams.lock_mut();
@@ -216,7 +216,7 @@ impl State {
     fn add_input_to(
         restreams: &mut Vec<Restream>,
         input: Input,
-        label: Option<String>,
+        label: Option<Label>,
         update_id: Option<InputId>,
     ) -> Option<bool> {
         if let Some(id) = update_id {
@@ -300,9 +300,9 @@ impl State {
     pub fn add_new_output(
         &self,
         input_id: InputId,
-        output_dst: Url,
-        label: Option<String>,
-        mix_with: Option<Url>,
+        output_dst: OutputDstUrl,
+        label: Option<Label>,
+        mix_with: Option<MixinSrcUrl>,
     ) -> Option<bool> {
         let mut restreams = self.restreams.lock_mut();
         let outputs =
@@ -538,7 +538,7 @@ pub struct Restream {
 
     /// Optional label of this `Restream`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    pub label: Option<Label>,
 
     /// `Input` that a live stream is received from.
     pub input: Input,
@@ -564,7 +564,7 @@ impl Restream {
     /// live stream from, if any.
     #[inline]
     #[must_use]
-    pub fn upstream_url(&self) -> Option<&Url> {
+    pub fn upstream_url(&self) -> Option<&InputSrcUrl> {
         if let Input::Pull(i) = &self.input {
             Some(&i.src)
         } else {
@@ -598,8 +598,8 @@ impl Restream {
     #[must_use]
     pub fn uses_srs_app(&self, app: &str) -> bool {
         match &self.input {
-            Input::Push(i) => app == i.name,
-            Input::FailoverPush(i) => app == i.name,
+            Input::Push(i) => i.name == *app,
+            Input::FailoverPush(i) => i.name == *app,
             Input::Pull(_) => {
                 app.starts_with("pull_") && app[5..].parse() == Ok(self.id.0)
             }
@@ -690,7 +690,7 @@ pub struct PullInput {
     /// At the moment only [RTMP] is supported.
     ///
     /// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
-    pub src: Url,
+    pub src: InputSrcUrl,
 
     /// `Status` of this `PullInput` indicating whether it performs pulling.
     #[serde(skip)]
@@ -714,7 +714,7 @@ impl PullInput {
 pub struct PushInput {
     /// Name of a live stream to expose its endpoints with for receiving and
     /// re-streaming media traffic.
-    pub name: String,
+    pub name: InputName,
 
     /// `Status` of this `PushInput` indicating whether it receives media
     /// traffic.
@@ -742,7 +742,7 @@ impl PushInput {
 pub struct FailoverPushInput {
     /// Name of a live RTMP stream to expose it with for receiving and
     /// re-streaming media traffic.
-    pub name: String,
+    pub name: InputName,
 
     /// `Status` of a `/main` endpoint indicating whether it receives media
     /// traffic.
@@ -830,11 +830,11 @@ pub struct Output {
     ///
     /// [Icecast]: https://icecast.org
     /// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
-    pub dst: Url,
+    pub dst: OutputDstUrl,
 
     /// Optional label of this `Output`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    pub label: Option<Label>,
 
     /// Volume rate of this `Output`'s audio tracks when mixed with
     /// `Output.mixins`.
@@ -884,7 +884,7 @@ pub struct Mixin {
     /// At the moment, only [TeamSpeak] is supported.
     ///
     /// [TeamSpeak]: https://teamspeak.com
-    pub src: Url,
+    pub src: MixinSrcUrl,
 
     /// Volume rate of this `Mixin`'s audio tracks to mix them with.
     #[serde(default, skip_serializing_if = "Volume::is_origin")]
@@ -990,6 +990,13 @@ where
     }
 }
 
+impl PartialEq<str> for InputName {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
 /// [`Url`] of an [`PullInput::src`].
 ///
 /// Only [RTMP] URLs are allowed at the moment.
@@ -1085,7 +1092,7 @@ impl OutputDstUrl {
     #[inline]
     #[must_use]
     pub fn new(url: Url) -> Option<Self> {
-        (matches!(url.scheme(), "rtmp" | "rtmps" | "icecast")
+        (matches!(url.scheme(), "icecast" | "rtmp" | "rtmps")
             && url.host().is_some())
         .then(|| Self(url))
     }
