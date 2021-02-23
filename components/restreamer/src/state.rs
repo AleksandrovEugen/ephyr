@@ -1,12 +1,12 @@
 //! Application state.
 
 use std::{
-    convert::TryInto, future::Future, panic::AssertUnwindSafe, path::Path,
-    time::Duration,
+    borrow::Cow, convert::TryInto, future::Future, panic::AssertUnwindSafe,
+    path::Path, time::Duration,
 };
 
 use anyhow::anyhow;
-use derive_more::{Display, From, Into};
+use derive_more::{Deref, Display, From, Into};
 use ephyr_log::log;
 use futures::{
     future::TryFutureExt as _,
@@ -18,7 +18,9 @@ use juniper::{
     graphql_scalar, GraphQLEnum, GraphQLObject, GraphQLScalarValue,
     GraphQLUnion, ParseScalarResult, ParseScalarValue, ScalarValue, Value,
 };
-use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
 use tokio::{fs, io::AsyncReadExt as _};
 use url::Url;
@@ -538,14 +540,14 @@ pub struct Restream {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
 
-    /// `Input` that live RTMP stream is received from.
+    /// `Input` that a live stream is received from.
     pub input: Input,
 
-    /// `Output`s that live RTMP stream is restreamed to.
+    /// `Output`s that a live stream is re-streamed to.
     pub outputs: Vec<Output>,
 
     /// Indicator whether this `Restream` is enabled, so allows to receive a
-    /// live RTMP stream from `Input`.
+    /// live stream from its `Input`.
     pub enabled: bool,
 
     /// ID of [SRS] client who publishes the ongoing live RTMP stream to
@@ -605,20 +607,20 @@ impl Restream {
     }
 }
 
-/// Source of a live RTMP stream for `Restream`.
+/// Source of a live stream for a `Restream`.
 #[derive(
     Clone, Debug, Deserialize, Eq, From, GraphQLUnion, PartialEq, Serialize,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Input {
-    /// Receiving a live RTMP stream from an external client.
+    /// Receiving a live stream from an external client.
     Push(PushInput),
 
-    /// Receiving a live RTMP stream from an external client with an additional
+    /// Receiving a live stream from an external client with an additional
     /// backup endpoint.
     FailoverPush(FailoverPushInput),
 
-    /// Pulling a live RTMP stream from a remote server.
+    /// Pulling a live stream from a remote server.
     Pull(PullInput),
 }
 
@@ -710,7 +712,7 @@ impl PullInput {
     Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
 )]
 pub struct PushInput {
-    /// Name of a live RTMP stream to expose it with for receiving and
+    /// Name of a live stream to expose its endpoints with for receiving and
     /// re-streaming media traffic.
     pub name: String,
 
@@ -822,7 +824,7 @@ pub struct Output {
     /// Unique ID of this `Output`.
     pub id: OutputId,
 
-    /// URL to push a live stream on to.
+    /// URL to push a live stream onto.
     ///
     /// At the moment only [RTMP] and [Icecast] are supported.
     ///
@@ -841,15 +843,16 @@ pub struct Output {
     #[serde(default, skip_serializing_if = "Volume::is_origin")]
     pub volume: Volume,
 
-    /// `Mixin`s to mix this `Output` with before restream to the destination.
+    /// `Mixin`s to mix this `Output` with before re-streaming to its
+    /// destination.
     ///
-    /// If empty, then no mixing is performed and restreaming is as cheap as
-    /// possible (just copying bytes "as is").
+    /// If empty, then no mixing is performed and re-streaming is as cheap as
+    /// possible (just copies bytes "as is").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mixins: Vec<Mixin>,
 
-    /// Indicator whether this `Output` is enabled, so performs a live RTMP
-    /// stream restream to destination.
+    /// Indicator whether this `Output` is enabled, so performs a live stream
+    /// re-streaming to its destination.
     pub enabled: bool,
 
     /// `Status` of this `Output` indicating whether it pushes media traffic to
@@ -887,7 +890,7 @@ pub struct Mixin {
     #[serde(default, skip_serializing_if = "Volume::is_origin")]
     pub volume: Volume,
 
-    /// Delay that this `Mixin` should wait before mixed with an `Output`.
+    /// Delay that this `Mixin` should wait before being mixed with an `Output`.
     ///
     /// Very useful to fix de-synchronization issues and correct timings between
     /// `Mixin` and its `Output`.
@@ -935,6 +938,113 @@ impl InputId {
     }
 }
 
+/// Name of a [`PushInput`] to form its endpoint URLs with.
+#[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
+pub struct InputName(String);
+
+impl InputName {
+    /// Creates a new [`InputName`] if the given value meets its invariants.
+    #[must_use]
+    pub fn new<'s, S: Into<Cow<'s, str>>>(val: S) -> Option<Self> {
+        static REGEX: Lazy<Regex> =
+            Lazy::new(|| Regex::new("^[a-z0-9_-]{1,20}$").unwrap());
+
+        let val = val.into();
+        (!val.is_empty() && !val.starts_with("pull_") && REGEX.is_match(&val))
+            .then(|| Self(val.into_owned()))
+    }
+}
+
+impl<'de> Deserialize<'de> for InputName {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(<Cow<'_, str>>::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("not a valid Restream.input.name"))
+    }
+}
+
+/// Type of a `PushInput`'s name to form its endpoint URLs with.
+///
+/// It should meet `[a-z0-9_-]{1,20}` format and doesn't start with a `pull_`
+/// prefix.
+#[graphql_scalar]
+impl<S> GraphQLScalar for InputName
+where
+    S: ScalarValue,
+{
+    fn resolve(&self) -> Value {
+        Value::scalar(self.0.as_str().to_owned())
+    }
+
+    fn from_input_value(v: &InputValue) -> Option<Self> {
+        v.as_scalar()
+            .and_then(ScalarValue::as_str)
+            .and_then(Self::new)
+    }
+
+    fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
+        <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
+/// [`Url`] of an [`PullInput::src`].
+///
+/// Only [RTMP] URLs are allowed at the moment.
+///
+/// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
+#[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
+pub struct InputSrcUrl(Url);
+
+impl InputSrcUrl {
+    /// Creates a new [`InputSrcUrl`] if the given [`Url`] is suitable for that.
+    #[inline]
+    #[must_use]
+    pub fn new(url: Url) -> Option<Self> {
+        (url.scheme() == "ts" && url.host().is_some()).then(|| Self(url))
+    }
+}
+
+impl<'de> Deserialize<'de> for InputSrcUrl {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(Url::deserialize(deserializer)?).ok_or_else(|| {
+            D::Error::custom("not a valid Restream.input.src URL")
+        })
+    }
+}
+
+/// Type of a `PullInput.src` URL.
+///
+/// Only [RTMP] URLs are allowed at the moment.
+///
+/// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
+#[graphql_scalar]
+impl<S> GraphQLScalar for InputSrcUrl
+where
+    S: ScalarValue,
+{
+    fn resolve(&self) -> Value {
+        Value::scalar(self.0.as_str().to_owned())
+    }
+
+    fn from_input_value(v: &InputValue) -> Option<Self> {
+        v.as_scalar()
+            .and_then(ScalarValue::as_str)
+            .and_then(|s| Url::parse(s).ok())
+            .and_then(Self::new)
+    }
+
+    fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
+        <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
 /// ID of an `Output`.
 #[derive(
     Clone,
@@ -960,6 +1070,65 @@ impl OutputId {
     }
 }
 
+/// [`Url`] of an [`Output::dst`].
+///
+/// Only [RTMP] and [Icecast] URLs are allowed at the moment.
+///
+/// [Icecast]: https://icecast.org
+/// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
+#[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
+pub struct OutputDstUrl(Url);
+
+impl OutputDstUrl {
+    /// Creates a new [`OutputDstUrl`] if the given [`Url`] is suitable for
+    /// that.
+    #[inline]
+    #[must_use]
+    pub fn new(url: Url) -> Option<Self> {
+        (matches!(url.scheme(), "rtmp" | "rtmps" | "icecast")
+            && url.host().is_some())
+        .then(|| Self(url))
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputDstUrl {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(Url::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("not a valid Output.dst URL"))
+    }
+}
+
+/// Type of an `Output.dst` URL.
+///
+/// Only [RTMP] and [Icecast] URLs are allowed at the moment.
+///
+/// [Icecast]: https://icecast.org
+/// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
+#[graphql_scalar]
+impl<S> GraphQLScalar for OutputDstUrl
+where
+    S: ScalarValue,
+{
+    fn resolve(&self) -> Value {
+        Value::scalar(self.0.as_str().to_owned())
+    }
+
+    fn from_input_value(v: &InputValue) -> Option<Self> {
+        v.as_scalar()
+            .and_then(ScalarValue::as_str)
+            .and_then(|s| Url::parse(s).ok())
+            .and_then(Self::new)
+    }
+
+    fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
+        <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
 /// ID of a `Mixin`.
 #[derive(
     Clone,
@@ -982,6 +1151,111 @@ impl MixinId {
     #[must_use]
     pub fn random() -> Self {
         Self(Uuid::new_v4())
+    }
+}
+
+/// [`Url`] of a [`Mixin::src`].
+///
+/// Only [TeamSpeak] URLs are allowed at the moment.
+///
+/// [TeamSpeak]: https://teamspeak.com
+#[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
+pub struct MixinSrcUrl(Url);
+
+impl MixinSrcUrl {
+    /// Creates a new [`MixinSrcUrl`] if the given [`Url`] is suitable for that.
+    #[inline]
+    #[must_use]
+    pub fn new(url: Url) -> Option<Self> {
+        (url.scheme() == "ts" && url.host().is_some()).then(|| Self(url))
+    }
+}
+
+impl<'de> Deserialize<'de> for MixinSrcUrl {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(Url::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("not a valid Mixin.src URL"))
+    }
+}
+
+/// Type of a `Mixin.src` URL.
+///
+/// Only [TeamSpeak] URLs are allowed at the moment.
+///
+/// [TeamSpeak]: https://teamspeak.com
+#[graphql_scalar]
+impl<S> GraphQLScalar for MixinSrcUrl
+where
+    S: ScalarValue,
+{
+    fn resolve(&self) -> Value {
+        Value::scalar(self.0.as_str().to_owned())
+    }
+
+    fn from_input_value(v: &InputValue) -> Option<Self> {
+        v.as_scalar()
+            .and_then(ScalarValue::as_str)
+            .and_then(|s| Url::parse(s).ok())
+            .and_then(Self::new)
+    }
+
+    fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
+        <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
+/// Label of a [`Restream`] or an [`Output`].
+#[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
+pub struct Label(String);
+
+impl Label {
+    /// Creates a new [`Label`] if the given value meets its invariants.
+    #[must_use]
+    pub fn new<'s, S: Into<Cow<'s, str>>>(val: S) -> Option<Self> {
+        static REGEX: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^[^,\n\t\r\f\v]{1,70}$").unwrap());
+
+        let val = val.into();
+        (!val.is_empty() && REGEX.is_match(&val))
+            .then(|| Self(val.into_owned()))
+    }
+}
+
+impl<'de> Deserialize<'de> for Label {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(<Cow<'_, str>>::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("not a valid label"))
+    }
+}
+
+/// Type of a `Restream` or an `Output` label.
+///
+/// It should meet `[^,\n\t\r\f\v]{1,70}` format.
+#[graphql_scalar]
+impl<S> GraphQLScalar for Label
+where
+    S: ScalarValue,
+{
+    fn resolve(&self) -> Value {
+        Value::scalar(self.0.as_str().to_owned())
+    }
+
+    fn from_input_value(v: &InputValue) -> Option<Self> {
+        v.as_scalar()
+            .and_then(ScalarValue::as_str)
+            .and_then(Self::new)
+    }
+
+    fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
+        <String as ParseScalarValue<S>>::from_str(value)
     }
 }
 
@@ -1055,10 +1329,10 @@ where
         Value::scalar(i32::from(self.0))
     }
 
-    fn from_input_value(v: &InputValue) -> Option<Volume> {
+    fn from_input_value(v: &InputValue) -> Option<Self> {
         v.as_scalar()
             .and_then(ScalarValue::as_int)
-            .and_then(Volume::new)
+            .and_then(Self::new)
     }
 
     fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
@@ -1119,10 +1393,10 @@ where
         Value::scalar(self.as_millis())
     }
 
-    fn from_input_value(v: &InputValue) -> Option<Delay> {
+    fn from_input_value(v: &InputValue) -> Option<Self> {
         v.as_scalar()
             .and_then(ScalarValue::as_int)
-            .and_then(Delay::from_millis)
+            .and_then(Self::from_millis)
     }
 
     fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {

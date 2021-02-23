@@ -38,7 +38,7 @@ url = { version = "2.1", features = ["serde"] }
 uuid = { version = "0.8", features = ["serde", "v4"] }
 [dependencies.derive_more]
     version = "0.99.11"
-    features = ["display", "error", "from"]
+    features = ["deref", "display", "error", "from"]
     default-features = false
 [dependencies.tokio]
     version = "0.2"

@@ -26,6 +26,7 @@ pub mod api;
 pub mod cli;
 pub mod ffmpeg;
 pub mod server;
+pub mod spec;
 pub mod srs;
 pub mod state;
 pub mod teamspeak;
