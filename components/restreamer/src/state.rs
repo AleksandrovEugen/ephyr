@@ -129,6 +129,58 @@ impl State {
         ));
     }
 
+    pub fn import_input(
+        &self,
+        id: Option<InputId>,
+        spec: spec::Restream,
+        replace: bool,
+    ) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+
+        for r in &*restreams {
+            if id != Some(r.id)
+                && match (&r.input, &spec.input) {
+                    (Input::Push(i), spec::Input::Push(s)) => i.name == s.name,
+                    (Input::Push(i), spec::Input::FailoverPush(s)) => {
+                        i.name == s.name
+                    }
+                    (Input::FailoverPush(i), spec::Input::Push(s)) => {
+                        i.name == s.name
+                    }
+                    (Input::FailoverPush(i), spec::Input::FailoverPush(s)) => {
+                        i.name == s.name
+                    }
+                    (Input::Pull(i), spec::Input::Pull(s)) => i.src == s.src,
+                }
+            {
+                return Some(false);
+            }
+        }
+
+        if let Some(id) = update_id {
+            let r = restreams.iter_mut().find(|r| r.id == id)?;
+            if !r.input.is(&input) {
+                r.input = input;
+                r.srs_publisher_id = None;
+                // TODO: Remove when kicking playing clients is implemented?
+                for o in &mut r.outputs {
+                    o.status = Status::Offline;
+                }
+            }
+            r.label = label;
+        } else {
+            restreams.push(Restream {
+                id: InputId::random(),
+                label,
+                input,
+                outputs: vec![],
+                enabled: true,
+                srs_publisher_id: None,
+            });
+        }
+        Some(true)
+    }
+
     /// Adds a new [`Restream`] with [`PullInput`] to this [`State`].
     ///
     /// If `update_id` is [`Some`] then updates an existing [`Restream`], if

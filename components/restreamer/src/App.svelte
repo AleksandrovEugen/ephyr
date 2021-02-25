@@ -6,7 +6,7 @@
   import { onDestroy } from 'svelte';
   import { setClient, subscribe } from 'svelte-apollo';
 
-  import { Info, State } from './api/graphql/client.graphql';
+  import { ExportAllInputs, Info, State } from './api/graphql/client.graphql';
 
   import { showError } from './util';
 
@@ -19,7 +19,7 @@
   import OutputModal from './OutputModal.svelte';
   import PasswordModal from './PasswordModal.svelte';
   import ExportModal from './ExportModal.svelte';
-  import Restream from './Restream.svelte';
+  import Restream, {value} from './Restream.svelte';
 
   UIkit.use(Icons);
 
@@ -67,6 +67,20 @@
   );
 
   let openPasswordModal = false;
+
+  async function openExportModal() {
+    let resp;
+    try {
+      resp = await gqlClient.query({ query: ExportAllInputs });
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+
+    if (!!resp.data && !!resp.data.exportAllRestreams) {
+      exportModal.open(value.id, JSON.stringify(JSON.parse(resp.data.exportAllRestreams), null, 2));
+    }
+  }
 </script>
 
 <template>
@@ -99,8 +113,7 @@
         <a
           class="export-import-all"
           href="/"
-          on:click|preventDefault={() =>
-            exportModal.open(null, '')}
+          on:click|preventDefault={openExportModal}
           title="Export/Import"
         >
           <i class="fas fa-share-square" />

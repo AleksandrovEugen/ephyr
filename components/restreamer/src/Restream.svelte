@@ -25,7 +25,7 @@
   const disableAllOutputsMutation = mutation(DisableAllOutputs);
   const enableAllOutputsMutation = mutation(EnableAllOutputs);
 
-  const apolloClient = getClient();
+  const gqlClient = getClient();
 
   export let public_host = 'localhost';
   export let value;
@@ -110,7 +110,7 @@
   async function openExportModal() {
     let resp;
     try {
-      resp = await apolloClient.query({
+      resp = await gqlClient.query({
         query: ExportInput,
         variables: { id: value.id },
       });

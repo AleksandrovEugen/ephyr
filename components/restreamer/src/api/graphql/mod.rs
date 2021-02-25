@@ -209,3 +209,12 @@ impl From<anyhow::Error> for Error {
             .message(&err)
     }
 }
+
+impl From<serde_json::Error> for Error {
+    #[inline]
+    fn from(err: serde_json::Error) -> Self {
+        Self::new("INVALID_SPEC_JSON")
+            .status(http::StatusCode::BAD_REQUEST)
+            .message(&err)
+    }
+}

@@ -16,6 +16,7 @@ use crate::{
         Delay, InputId, InputName, InputSrcUrl, Label, MixinId, MixinSrcUrl,
         OutputDstUrl, OutputId, Restream, Volume,
     },
+    spec,
 };
 
 use super::Context;
@@ -425,6 +426,22 @@ impl MutationsRoot {
             .unwrap()
         });
         Ok(true)
+    }
+
+    #[graphql(arguments(
+    input_id(
+        description = ""
+    ),
+    spec(description = ""),
+    replace(description = "", default = false),
+    ))]
+    fn import(input_id: Option<InputId>, spec: String, replace: bool, context: &Context) -> Result<bool, graphql::Error> {
+        if let Some(id) = input_id {
+            let restream: spec::Restream = serde_json::from_str(&spec)?;
+        } else {
+            let restreams: Vec<spec::Restream> = serde_json::from_str(&spec)?;
+        }
+        todo!()
     }
 }
 
