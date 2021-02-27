@@ -1,8 +1,8 @@
 //! Application state.
 
 use std::{
-    borrow::Cow, convert::TryInto, future::Future, panic::AssertUnwindSafe,
-    path::Path, time::Duration,
+    borrow::Cow, convert::TryInto, future::Future, mem,
+    panic::AssertUnwindSafe, path::Path, time::Duration,
 };
 
 use anyhow::anyhow;
@@ -26,7 +26,7 @@ use tokio::{fs, io::AsyncReadExt as _};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{display_panic, spec, srs};
+use crate::{display_panic, serde::is_false, spec, srs};
 
 /// Reactive application state.
 ///
@@ -670,23 +670,6 @@ impl Restream {
     }
 }
 
-/// Source of a live stream for a `Restream`.
-#[derive(
-    Clone, Debug, Deserialize, Eq, From, GraphQLUnion, PartialEq, Serialize,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Input {
-    /// Receiving a live stream from an external client.
-    Push(PushInput),
-
-    /// Receiving a live stream from an external client with an additional
-    /// backup endpoint.
-    FailoverPush(FailoverPushInput),
-
-    /// Pulling a live stream from a remote server.
-    Pull(PullInput),
-}
-
 impl Input {
     /// Indicates whether this [`Input`] is a [`PullInput`].
     #[inline]
@@ -916,126 +899,202 @@ impl FailoverPushInput {
     }
 }
 
-/// Destination that `Restream` should restream a live RTMP stream to.
+/// Name of a [`PushInput`] to form its endpoint URLs with.
+#[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
+pub struct InputName(String);
+
+impl InputName {
+    /// Creates a new [`InputName`] if the given value meets its invariants.
+    #[must_use]
+    pub fn new<'s, S: Into<Cow<'s, str>>>(val: S) -> Option<Self> {
+        static REGEX: Lazy<Regex> =
+            Lazy::new(|| Regex::new("^[a-z0-9_-]{1,20}$").unwrap());
+
+        let val = val.into();
+        (!val.is_empty() && !val.starts_with("pull_") && REGEX.is_match(&val))
+            .then(|| Self(val.into_owned()))
+    }
+}
+
+impl<'de> Deserialize<'de> for InputName {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(<Cow<'_, str>>::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("Not a valid Restream.input.name"))
+    }
+}
+
+/// Upstream source that a `Restream` receives a live stream from.
 #[derive(
     Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
 )]
-pub struct Output {
-    /// Unique ID of this `Output`.
-    pub id: OutputId,
+pub struct Input {
+    /// Unique ID of this `Input`.
+    pub id: InputId,
 
-    /// URL to push a live stream onto.
-    ///
-    /// At the moment only [RTMP] and [Icecast] are supported.
-    ///
-    /// [Icecast]: https://icecast.org
-    /// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
-    pub dst: OutputDstUrl,
+    /// Key of this `Input` to expose its endpoint with for accepting and
+    /// serving a live stream.
+    pub key: InputKey,
 
-    /// Optional label of this `Output`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<Label>,
-
-    /// Volume rate of this `Output`'s audio tracks when mixed with
-    /// `Output.mixins`.
+    /// Sources to pull a live stream from.
     ///
-    /// Has no effect when there is no `Output.mixins`.
-    #[serde(default, skip_serializing_if = "Volume::is_origin")]
-    pub volume: Volume,
-
-    /// `Mixin`s to mix this `Output` with before re-streaming to its
-    /// destination.
+    /// If specified, then this `Input` will pull a live stream from it (pull
+    /// kind), otherwise this `Input` will await a live stream to be pushed
+    /// (push kind).
     ///
-    /// If empty, then no mixing is performed and re-streaming is as cheap as
-    /// possible (just copies bytes "as is").
+    /// If multiple sources are specified, then the first one will be attempted
+    /// falling back to the second one, and so on. Once the first source is
+    /// restored, this `Input` switches back to it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mixins: Vec<Mixin>,
+    pub srcs: Vec<InputSrc>,
 
-    /// Indicator whether this `Output` is enabled, so performs a live stream
-    /// re-streaming to its destination.
+    /// Indicator whether this `Input` is enabled, so is allowed to receive a
+    /// live stream from its upstream sources.
+    #[serde(default, skip_serializing_if = "is_false")]
     pub enabled: bool,
 
-    /// `Status` of this `Output` indicating whether it pushes media traffic to
-    /// destination.
+    /// `Status` of this `Input` indicating whether it actually serves a live
+    /// stream ready to be consumed by `Output`s.
     #[serde(skip)]
     pub status: Status,
+
+    /// ID of a [SRS] client who publishes a live stream to this [`Input`]
+    /// (either an external client or a local process).
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    #[graphql(skip)]
+    #[serde(skip)]
+    pub srs_publisher_id: Option<srs::ClientId>,
 }
 
-impl Output {
-    /// Checks whether this [`Output`] is the same as `other` on.
+impl Input {
+    /// Creates a new [`Input`] out of the given [`spec::v1::Input`].
     #[inline]
     #[must_use]
-    pub fn is(&self, other: &Self) -> bool {
-        self.dst == other.dst
+    pub fn new(spec: spec::v1::Input) -> Self {
+        Self {
+            id: InputId::random(),
+            key: spec.key,
+            srcs: spec.srcs.into_iter().map(InputSrc::new).collect(),
+            enabled: spec.enabled,
+            status: Status::Offline,
+            srs_publisher_id: None,
+        }
     }
 
-    /// Exports this [`Output`] as a [`spec::Output`].
+    /// Applies the given [`spec::v1::Input`] to this [`Input`].
+    ///
+    /// Replaces all the [`Input::srcs`] with new ones.
+    pub fn apply(&mut self, new: spec::v1::Input) {
+        self.key = new.key;
+        self.enabled = new.enabled;
+
+        let mut olds =
+            mem::replace(&mut self.srcs, Vec::with_capacity(new.srcs.len()));
+        for new in new.srcs {
+            if let Some(mut old) = olds
+                .iter()
+                .enumerate()
+                .find_map(|(n, s)| s.identified_by(&new).then(|| n))
+                .map(|n| olds.swap_remove(n))
+            {
+                old.apply(new);
+                self.srcs.push(old);
+            } else {
+                self.srcs.push(InputSrc::new(new));
+            }
+        }
+    }
+
+    /// Exports this [`Input`] as a [`spec::v1::Input`].
+    #[inline]
     #[must_use]
-    pub fn export(&self) -> spec::Output {
-        spec::Output {
-            dst: self.dst.clone(),
-            label: self.label.clone(),
+    pub fn export(&self) -> spec::v1::Input {
+        spec::v1::Input {
+            key: self.key.clone(),
+            srcs: self.srcs.iter().map(InputSrc::export).collect(),
             enabled: self.enabled,
-            volume: self.volume,
-            mixins: self.mixins.iter().map(Mixin::export).collect(),
         }
     }
 }
 
-/// Additional source for an `Output` to be mixed with before re-streamed to the
-/// destination.
+/// Source to pull a live stream by an `Input` from.
+#[derive(
+    Clone, Debug, Deserialize, Eq, From, GraphQLUnion, PartialEq, Serialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum InputSrc {
+    /// Remote endpoint.
+    Remote(RemoteInputSrc),
+
+    /// Yet another local `Input`.
+    Local(Input),
+}
+
+impl InputSrc {
+    /// Creates a new [`InputSrc`] out of the given [`spec::v1::InputSrc`].
+    #[inline]
+    #[must_use]
+    pub fn new(spec: spec::v1::InputSrc) -> Self {
+        match spec {
+            spec::v1::InputSrc::RemoteUrl(url) => {
+                Self::Remote(RemoteInputSrc { url })
+            }
+            spec::v1::InputSrc::LocalInput(i) => Self::Local(Input::new(i)),
+        }
+    }
+
+    /// Applies the given [`spec::v1::InputSrc`] to this [`InputSrc`].
+    #[inline]
+    pub fn apply(&mut self, new: spec::v1::InputSrc) {
+        match (self, new) {
+            (Self::Remote(old), spec::v1::InputSrc::RemoteUrl(new_url)) => {
+                old.url = new_url
+            }
+            (Self::Local(old), spec::v1::InputSrc::LocalInput(new)) => {
+                old.apply(new)
+            }
+            (old, new) => *old = Self::new(new),
+        }
+    }
+
+    /// Exports this [`InputSrc`] as a [`spec::v1::InputSrc`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::v1::InputSrc {
+        match self {
+            Self::Remote(i) => spec::v1::InputSrc::RemoteUrl(i.url.clone()),
+            Self::Local(i) => spec::v1::InputSrc::LocalInput(i.export()),
+        }
+    }
+
+    /// Checks whether this [`InputSrc`] is identified by the provided
+    /// [`spec::v1::InputSrc`].
+    #[inline]
+    #[must_use]
+    pub fn identified_by(&self, spec: &spec::v1::InputSrc) -> bool {
+        match (self, spec) {
+            (Self::Remote(a), spec::v1::InputSrc::RemoteUrl(b_url)) => {
+                a.url == b_url
+            }
+            (Self::Local(a), spec::v1::InputSrc::LocalInput(b)) => {
+                a.key == b.key
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Remote upstream source to pull a live stream by an `Input` from.
 #[derive(
     Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
 )]
-pub struct Mixin {
-    /// Unique ID of this `Mixin`.
-    pub id: MixinId,
-
-    /// URL of the source to be mixed in.
-    ///
-    /// At the moment, only [TeamSpeak] is supported.
-    ///
-    /// [TeamSpeak]: https://teamspeak.com
-    pub src: MixinSrcUrl,
-
-    /// Volume rate of this `Mixin`'s audio tracks to mix them with.
-    #[serde(default, skip_serializing_if = "Volume::is_origin")]
-    pub volume: Volume,
-
-    /// Delay that this `Mixin` should wait before being mixed with an `Output`.
-    ///
-    /// Very useful to fix de-synchronization issues and correct timings between
-    /// `Mixin` and its `Output`.
-    #[serde(default, skip_serializing_if = "Delay::is_zero")]
-    pub delay: Delay,
-}
-
-impl Mixin {
-    /// Exports this [`Mixin`] as a [`spec::Mixin`].
-    #[inline]
-    #[must_use]
-    pub fn export(&self) -> spec::Mixin {
-        spec::Mixin {
-            src: self.src.clone(),
-            volume: self.volume,
-            delay: self.delay,
-        }
-    }
-}
-
-/// Status indicating what's going on in `Input` or `Output`.
-#[derive(Clone, Copy, Debug, Eq, GraphQLEnum, PartialEq, SmartDefault)]
-pub enum Status {
-    /// Inactive, no operations are performed and no media traffic is allowed.
-    #[default]
-    Offline,
-
-    /// Initializing, media traffic is allowed, but not yet flows as expected.
-    Initializing,
-
-    /// Active, all operations are performing successfully and media traffic
-    /// flows as expected.
-    Online,
+pub struct RemoteInputSrc {
+    /// URL of this `RemoteInputSrc`.
+    pub url: InputSrcUrl,
 }
 
 /// ID of an `Input`.
@@ -1063,40 +1122,39 @@ impl InputId {
     }
 }
 
-/// Name of a [`PushInput`] to form its endpoint URLs with.
+/// Key of an [`Input`] used to form its endpoint URL.
 #[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
-pub struct InputName(String);
+pub struct InputKey(String);
 
-impl InputName {
-    /// Creates a new [`InputName`] if the given value meets its invariants.
+impl InputKey {
+    /// Creates a new [`InputKey`] if the given value meets its invariants.
     #[must_use]
     pub fn new<'s, S: Into<Cow<'s, str>>>(val: S) -> Option<Self> {
         static REGEX: Lazy<Regex> =
             Lazy::new(|| Regex::new("^[a-z0-9_-]{1,20}$").unwrap());
 
         let val = val.into();
-        (!val.is_empty() && !val.starts_with("pull_") && REGEX.is_match(&val))
+        (!val.is_empty() && REGEX.is_match(&val))
             .then(|| Self(val.into_owned()))
     }
 }
 
-impl<'de> Deserialize<'de> for InputName {
+impl<'de> Deserialize<'de> for InputKey {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         Self::new(<Cow<'_, str>>::deserialize(deserializer)?)
-            .ok_or_else(|| D::Error::custom("not a valid Restream.input.name"))
+            .ok_or_else(|| D::Error::custom("Not a valid Input.key"))
     }
 }
 
-/// Type of a `PushInput`'s name to form its endpoint URLs with.
+/// Type of `Input`'s `key` used to form its endpoint URL.
 ///
-/// It should meet `[a-z0-9_-]{1,20}` format and doesn't start with a `pull_`
-/// prefix.
+/// It should meet `[a-z0-9_-]{1,20}` format.
 #[graphql_scalar]
-impl<S> GraphQLScalar for InputName
+impl<S> GraphQLScalar for InputKey
 where
     S: ScalarValue,
 {
@@ -1115,14 +1173,14 @@ where
     }
 }
 
-impl PartialEq<str> for InputName {
+impl PartialEq<str> for InputKey {
     #[inline]
     fn eq(&self, other: &str) -> bool {
         self.0 == other
     }
 }
 
-/// [`Url`] of an [`PullInput::src`].
+/// [`Url`] of a [`RemoteInputSrc`].
 ///
 /// Only [RTMP] URLs are allowed at the moment.
 ///
@@ -1146,13 +1204,12 @@ impl<'de> Deserialize<'de> for InputSrcUrl {
     where
         D: Deserializer<'de>,
     {
-        Self::new(Url::deserialize(deserializer)?).ok_or_else(|| {
-            D::Error::custom("not a valid Restream.input.src URL")
-        })
+        Self::new(Url::deserialize(deserializer)?)
+            .ok_or_else(|| D::Error::custom("Not a valid RemoteInputSrc.url"))
     }
 }
 
-/// Type of a `PullInput.src` URL.
+/// Type of a `RemoteInputSrc.url`.
 ///
 /// Only [RTMP] URLs are allowed at the moment.
 ///
@@ -1175,6 +1232,123 @@ where
 
     fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
         <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
+/// Downstream destination that a `Restream` re-streams a live stream to.
+#[derive(
+    Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
+)]
+pub struct Output {
+    /// Unique ID of this `Output`.
+    pub id: OutputId,
+
+    /// Downstream URL to re-stream a live stream onto.
+    ///
+    /// At the moment only [RTMP] and [Icecast] are supported.
+    ///
+    /// [Icecast]: https://icecast.org
+    /// [RTMP]: https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol
+    pub dst: OutputDstUrl,
+
+    /// Optional label of this `Output`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<Label>,
+
+    /// Volume rate of this `Output`'s audio tracks when mixed with
+    /// `Output.mixins`.
+    ///
+    /// Has no effect when there is no `Output.mixins`.
+    #[serde(default, skip_serializing_if = "Volume::is_origin")]
+    pub volume: Volume,
+
+    /// `Mixin`s to mix this `Output` with before re-streaming it to its
+    /// downstream destination.
+    ///
+    /// If empty, then no mixing is performed and re-streaming is as cheap as
+    /// possible (just copies bytes "as is").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mixins: Vec<Mixin>,
+
+    /// Indicator whether this `Output` is enabled, so is allowed to perform a
+    /// live stream re-streaming to its downstream destination.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub enabled: bool,
+
+    /// `Status` of this `Output` indicating whether it actually re-streams a
+    /// live stream to its downstream destination.
+    #[serde(skip)]
+    pub status: Status,
+}
+
+impl Output {
+    /// Creates a new [`Output`] out of the given [`spec::v1::Output`].
+    #[inline]
+    #[must_use]
+    pub fn new(spec: spec::v1::Output) -> Self {
+        Self {
+            id: OutputId::random(),
+            dst: spec.dst,
+            label: spec.label,
+            volume: spec.volume,
+            mixins: spec.mixins.into_iter().map(Mixin::new).collect(),
+            enabled: spec.enabled,
+            status: Status::Offline,
+        }
+    }
+
+    /// Applies the given [`spec::v1::Output`] to this [`Output`].
+    ///
+    /// If `replace` is `true` then all the [`Output::mixins`] will be replaced
+    /// with new ones, otherwise new ones will be merged with already existing
+    /// [`Output::mixins`].
+    pub fn apply(&mut self, new: spec::v1::Output, replace: bool) {
+        self.dst = new.dst;
+        self.label = new.label;
+        self.volume = new.volume;
+        self.enabled = new.enabled;
+        if replace {
+            let mut olds = mem::replace(
+                &mut self.mixins,
+                Vec::with_capacity(new.mixins.len()),
+            );
+            for new in new.mixins {
+                if let Some(mut old) = olds
+                    .iter()
+                    .enumerate()
+                    .find_map(|(n, o)| (o.src == new.src).then(|| n))
+                    .map(|n| olds.swap_remove(n))
+                {
+                    old.apply(new);
+                    self.mixins.push(old);
+                } else {
+                    self.mixins.push(Mixin::new(new));
+                }
+            }
+        } else {
+            for new in new.mixins {
+                if let Some(old) =
+                    self.mixins.iter_mut().find(|o| o.src == new.src)
+                {
+                    old.apply(new);
+                } else {
+                    self.mixins.push(Mixin::new(new));
+                }
+            }
+        }
+    }
+
+    /// Exports this [`Output`] as a [`spec::v1::Output`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::v1::Output {
+        spec::v1::Output {
+            dst: self.dst.clone(),
+            label: self.label.clone(),
+            volume: self.volume,
+            mixins: self.mixins.iter().map(Mixin::export).collect(),
+            enabled: self.enabled,
+        }
     }
 }
 
@@ -1231,7 +1405,7 @@ impl<'de> Deserialize<'de> for OutputDstUrl {
         D: Deserializer<'de>,
     {
         Self::new(Url::deserialize(deserializer)?)
-            .ok_or_else(|| D::Error::custom("not a valid Output.dst URL"))
+            .ok_or_else(|| D::Error::custom("Not a valid Output.dst URL"))
     }
 }
 
@@ -1259,6 +1433,73 @@ where
 
     fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
         <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
+/// Additional source for an `Output` to be mixed with before re-streaming to
+/// the destination.
+#[derive(
+    Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
+)]
+pub struct Mixin {
+    /// Unique ID of this `Mixin`.
+    pub id: MixinId,
+
+    /// URL of the source to be mixed with an `Output`.
+    ///
+    /// At the moment, only [TeamSpeak] is supported.
+    ///
+    /// [TeamSpeak]: https://teamspeak.com
+    pub src: MixinSrcUrl,
+
+    /// Volume rate of this `Mixin`'s audio tracks to mix them with.
+    #[serde(default, skip_serializing_if = "Volume::is_origin")]
+    pub volume: Volume,
+
+    /// Delay that this `Mixin` should wait before being mixed with an `Output`.
+    ///
+    /// Very useful to fix de-synchronization issues and correct timings between
+    /// a `Mixin` and its `Output`.
+    #[serde(default, skip_serializing_if = "Delay::is_zero")]
+    pub delay: Delay,
+
+    /// `Status` of this `Mixin` indicating whether it provides an actual media
+    /// stream to be mixed with its `Output`.
+    #[serde(skip)]
+    pub status: Status,
+}
+
+impl Mixin {
+    /// Creates a new [`Mixin`] out of the given [`spec::v1::Mixin`].
+    #[inline]
+    #[must_use]
+    pub fn new(spec: spec::v1::Mixin) -> Self {
+        Self {
+            id: MixinId::random(),
+            src: spec.src,
+            volume: spec.volume,
+            delay: spec.delay,
+            status: Status::Offline,
+        }
+    }
+
+    /// Applies the given [`spec::v1::Mixin`] to this [`Mixin`].
+    #[inline]
+    pub fn apply(&mut self, new: spec::v1::Mixin) {
+        self.src = new.src;
+        self.volume = new.volume;
+        self.delay = new.delay;
+    }
+
+    /// Exports this [`Mixin`] as a [`spec::v1::Mixin`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::v1::Mixin {
+        spec::v1::Mixin {
+            src: self.src.clone(),
+            volume: self.volume,
+            delay: self.delay,
+        }
     }
 }
 
@@ -1311,7 +1552,7 @@ impl<'de> Deserialize<'de> for MixinSrcUrl {
         D: Deserializer<'de>,
     {
         Self::new(Url::deserialize(deserializer)?)
-            .ok_or_else(|| D::Error::custom("not a valid Mixin.src URL"))
+            .ok_or_else(|| D::Error::custom("Not a valid Mixin.src URL"))
     }
 }
 
@@ -1341,6 +1582,21 @@ where
     }
 }
 
+/// Status indicating availability of an `Input`, `Output`, or a `Mixin`.
+#[derive(Clone, Copy, Debug, Eq, GraphQLEnum, PartialEq, SmartDefault)]
+pub enum Status {
+    /// Inactive, no operations are performed and no media traffic is flowed.
+    #[default]
+    Offline,
+
+    /// Initializing, media traffic doesn't yet flow as expected.
+    Initializing,
+
+    /// Active, all operations are performing successfully and media traffic
+    /// flows as expected.
+    Online,
+}
+
 /// Label of a [`Restream`] or an [`Output`].
 #[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
 pub struct Label(String);
@@ -1365,7 +1621,7 @@ impl<'de> Deserialize<'de> for Label {
         D: Deserializer<'de>,
     {
         Self::new(<Cow<'_, str>>::deserialize(deserializer)?)
-            .ok_or_else(|| D::Error::custom("not a valid label"))
+            .ok_or_else(|| D::Error::custom("Not a valid Label"))
     }
 }
 

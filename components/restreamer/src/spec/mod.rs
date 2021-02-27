@@ -3,6 +3,8 @@
 //!
 //! [`State`]: crate::state::State
 
+pub mod v1;
+
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
@@ -110,23 +112,7 @@ pub struct Output {
     pub mixins: Vec<Mixin>,
 }
 
-/// Shareable (exportable and importable) specification of a [`state::Mixin`].
-///
-/// [`state::Mixin`]: crate::state::Mixin
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Mixin {
-    /// URL of the source to be mixed in.
-    pub src: MixinSrcUrl,
 
-    /// Volume rate of this [`Mixin`]'s audio tracks to mix them with.
-    #[serde(default, skip_serializing_if = "Volume::is_origin")]
-    pub volume: Volume,
-
-    /// Delay that this [`Mixin`] should wait before being mixed with an
-    /// [`Output`].
-    #[serde(default, skip_serializing_if = "Delay::is_zero")]
-    pub delay: Delay,
-}
 
 #[cfg(test)]
 mod spec {
@@ -145,13 +131,13 @@ mod spec {
             input: PushInput {
                 name: InputName::new("test").unwrap(),
             }
-            .into(),
+                .into(),
             outputs: vec![
                 Output {
                     dst: OutputDstUrl::new(
                         Url::parse("icecast://127.0.0.1/hi").unwrap(),
                     )
-                    .unwrap(),
+                        .unwrap(),
                     label: None,
                     enabled: true,
                     volume: Volume::ORIGIN,
@@ -161,7 +147,7 @@ mod spec {
                     dst: OutputDstUrl::new(
                         Url::parse("rtmp://127.0.0.1/test2/in").unwrap(),
                     )
-                    .unwrap(),
+                        .unwrap(),
                     label: Label::new("Second out"),
                     enabled: false,
                     volume: Volume::ORIGIN,
@@ -171,7 +157,7 @@ mod spec {
                     dst: OutputDstUrl::new(
                         Url::parse("rtmps://127.0.0.1/test5/in").unwrap(),
                     )
-                    .unwrap(),
+                        .unwrap(),
                     label: Label::new("Mixed TeamSpeak"),
                     enabled: false,
                     volume: Volume::OFF,
@@ -180,7 +166,7 @@ mod spec {
                             Url::parse("ts://127.0.0.1/chan?name=some")
                                 .unwrap(),
                         )
-                        .unwrap(),
+                            .unwrap(),
                         volume: Volume::MAX,
                         delay: Delay::default(),
                     }],
