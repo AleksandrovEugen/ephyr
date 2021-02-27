@@ -12,11 +12,12 @@ use rand::Rng as _;
 
 use crate::{
     api::graphql,
+    spec,
     state::{
         Delay, InputId, InputName, InputSrcUrl, Label, MixinId, MixinSrcUrl,
-        OutputDstUrl, OutputId, Restream, Volume,
+        OutputDstUrl, OutputId, Restream, RestreamKey, Volume,
     },
-    spec,
+    Spec,
 };
 
 use super::Context;
@@ -429,19 +430,16 @@ impl MutationsRoot {
     }
 
     #[graphql(arguments(
-    input_id(
-        description = ""
-    ),
-    spec(description = ""),
-    replace(description = "", default = false),
+        spec(description = ""),
+        replace(description = "", default = false),
     ))]
-    fn import(input_id: Option<InputId>, spec: String, replace: bool, context: &Context) -> Result<bool, graphql::Error> {
-        if let Some(id) = input_id {
-            let restream: spec::Restream = serde_json::from_str(&spec)?;
-        } else {
-            let restreams: Vec<spec::Restream> = serde_json::from_str(&spec)?;
-        }
-        todo!()
+    fn import(
+        spec: String,
+        replace: bool,
+        context: &Context,
+    ) -> Result<bool, graphql::Error> {
+        context.state().apply(serde_json::from_str(&spec)?, replace);
+        Ok(true)
     }
 }
 
@@ -459,7 +457,7 @@ pub struct QueriesRoot;
 
 #[graphql_object(name = "Queries", context = Context)]
 impl QueriesRoot {
-    /// Returns current `Info` parameters of this server.
+    /// Returns the current `Info` parameters of this server.
     fn info(context: &Context) -> Info {
         Info {
             public_host: context.config().public_host.clone().unwrap(),
@@ -467,46 +465,40 @@ impl QueriesRoot {
         }
     }
 
-    /// Returns all `Restream`s happening on this server.
+    /// Returns all the `Restream`s happening on this server.
     fn all_restreams(context: &Context) -> Vec<Restream> {
         context.state().restreams.get_cloned()
     }
 
-    /// Returns all `Restream`s happening on this server in an exportable JSON
-    /// format.
-    fn export_all_restreams(
-        context: &Context,
-    ) -> Result<String, graphql::Error> {
-        let exported = context
-            .state()
-            .restreams
-            .get_cloned()
-            .iter()
-            .map(Restream::export)
-            .collect::<Vec<_>>();
-        serde_json::to_string(&exported)
-            .map_err(|e| anyhow!("Failed to JSON-serialize spec: {}", e).into())
-    }
-
-    /// Returns a single `Restream` happening on this server in an exportable
-    /// JSON format.
-    #[graphql(arguments(input_id(
-        description = "ID of the `Restream` to be exported."
+    /// Returns `Restream`s happening on this server and identifiable by the
+    /// given `keys` in an exportable JSON format.
+    ///
+    /// If no `keys` specified, then returns all the `Restream`s happening on
+    /// this server at the moment.
+    #[graphql(arguments(keys(
+        description = "Keys of `Restream`s to be exported.\
+                       \n\n\
+                       If empty, then all the `Restream`s will be exported."
+        default = Vec::new(),
     )))]
-    fn export_restream(
-        input_id: InputId,
+    fn export(
+        keys: Vec<RestreamKey>,
         context: &Context,
     ) -> Result<Option<String>, graphql::Error> {
-        context
+        let restreams = context
             .state()
             .restreams
             .get_cloned()
             .into_iter()
-            .find_map(|r| {
-                (r.id == input_id).then(|| {
-                    serde_json::to_string(&r.export()).map_err(|e| {
-                        anyhow!("Failed to JSON-serialize spec: {}", e).into()
-                    })
+            .filter_map(|r| {
+                (keys.is_empty() || keys.contains(&r.key)).then(|| r.export())
+            })
+            .collect::<Vec<_>>();
+        (!restreams.is_empty())
+            .then(|| {
+                let spec: Spec = spec::v1::Spec { restreams }.into();
+                serde_json::to_string(&spec).map_err(|e| {
+                    anyhow!("Failed to JSON-serialize spec: {}", e).into()
                 })
             })
             .transpose()

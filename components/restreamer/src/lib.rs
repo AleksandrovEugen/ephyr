@@ -36,7 +36,7 @@ use std::{any::Any, mem};
 
 use ephyr_log::slog;
 
-pub use self::state::State;
+pub use self::{state::State, spec::Spec};
 
 /// Runs application.
 ///

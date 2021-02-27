@@ -26,20 +26,7 @@ use tokio::{fs, io::AsyncReadExt as _};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{display_panic, serde::is_false, spec, srs};
-
-/// Reactive application state.
-///
-/// Any changes to it automatically propagate to appropriate subscribers.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct State {
-    /// [`argon2`] hash of password which protects access to this application's
-    /// public APIs.
-    pub password_hash: Mutable<Option<String>>,
-
-    /// All [`Restream`]s performed by this application.
-    pub restreams: Mutable<Vec<Restream>>,
-}
+use crate::{display_panic, serde::is_false, spec, srs, Spec};
 
 impl State {
     /// Instantiates a new [`State`] reading it from a file (if any) and
@@ -580,37 +567,6 @@ impl State {
     }
 }
 
-/// Restream of a live RTMP stream from one `Input` to many `Output`s.
-#[derive(
-    Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
-)]
-pub struct Restream {
-    /// Unique ID of this `Restream`.
-    pub id: InputId,
-
-    /// Optional label of this `Restream`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<Label>,
-
-    /// `Input` that a live stream is received from.
-    pub input: Input,
-
-    /// `Output`s that a live stream is re-streamed to.
-    pub outputs: Vec<Output>,
-
-    /// Indicator whether this `Restream` is enabled, so allows to receive a
-    /// live stream from its `Input`.
-    pub enabled: bool,
-
-    /// ID of [SRS] client who publishes the ongoing live RTMP stream to
-    /// [`Input`].
-    ///
-    /// [SRS]: https://github.com/ossrs/srs
-    #[graphql(skip)]
-    #[serde(skip)]
-    pub srs_publisher_id: Option<srs::ClientId>,
-}
-
 impl Restream {
     /// Returns an URL of the remote server that this [`Restream`] receives a
     /// live stream from, if any.
@@ -657,34 +613,9 @@ impl Restream {
             }
         }
     }
-
-    /// Exports this [`Restream`] as a [`spec::Restream`].
-    #[must_use]
-    pub fn export(&self) -> spec::Restream {
-        spec::Restream {
-            label: self.label.clone(),
-            enabled: self.enabled,
-            input: self.input.export(),
-            outputs: self.outputs.iter().map(Output::export).collect(),
-        }
-    }
 }
 
 impl Input {
-    /// Indicates whether this [`Input`] is a [`PullInput`].
-    #[inline]
-    #[must_use]
-    pub fn is_pull(&self) -> bool {
-        matches!(self, Input::Pull(_))
-    }
-
-    /// Indicates whether this [`Input`] is a [`FailoverPushInput`].
-    #[inline]
-    #[must_use]
-    pub fn is_failover(&self) -> bool {
-        matches!(self, Input::FailoverPush(_))
-    }
-
     /// Indicates whether this [`Input`] has [`Status::Online`].
     #[must_use]
     pub fn is_online(&self) -> bool {
@@ -724,16 +655,6 @@ impl Input {
             _ => false,
         }
     }
-
-    /// Exports this [`Input`] as a [`spec::Input`].
-    #[must_use]
-    pub fn export(&self) -> spec::Input {
-        match self {
-            Self::Push(i) => i.export().into(),
-            Self::FailoverPush(i) => i.export().into(),
-            Self::Pull(i) => i.export().into(),
-        }
-    }
 }
 
 /// `Input` pulling a live RTMP stream from a remote server.
@@ -753,24 +674,6 @@ pub struct PullInput {
     pub status: Status,
 }
 
-impl PullInput {
-    /// Checks whether this [`PullInput`] is the same as the `other` one.
-    #[inline]
-    #[must_use]
-    pub fn is(&self, other: &Self) -> bool {
-        self.src == other.src
-    }
-
-    /// Exports this [`PullInput`] as a [`spec::PullInput`].
-    #[inline]
-    #[must_use]
-    pub fn export(&self) -> spec::PullInput {
-        spec::PullInput {
-            src: self.src.clone(),
-        }
-    }
-}
-
 /// `Input` receiving a live RTMP stream from a remote client on an `/in`
 /// endpoint.
 #[derive(
@@ -785,24 +688,6 @@ pub struct PushInput {
     /// traffic.
     #[serde(skip)]
     pub status: Status,
-}
-
-impl PushInput {
-    /// Checks whether this [`PushInput`] is the same as the `other` one.
-    #[inline]
-    #[must_use]
-    pub fn is(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-
-    /// Exports this [`PushInput`] as a [`spec::PushInput`].
-    #[inline]
-    #[must_use]
-    pub fn export(&self) -> spec::PushInput {
-        spec::PushInput {
-            name: self.name.clone(),
-        }
-    }
 }
 
 /// `Input` receiving a live RTMP stream from a remote client on two endpoints:
@@ -851,14 +736,6 @@ pub struct FailoverPushInput {
 }
 
 impl FailoverPushInput {
-    /// Checks whether this [`FailoverPushInput`] is the same as the `other`
-    /// one.
-    #[inline]
-    #[must_use]
-    pub fn is(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-
     /// Returns a local [SRS] URL of the currently active `/main` or `/backup`
     /// endpoint.
     ///
@@ -888,42 +765,222 @@ impl FailoverPushInput {
         self.main_status == Status::Online
             || self.backup_status == Status::Online
     }
+}
 
-    /// Exports this [`FailoverPushInput`] as a [`spec::FailoverPushInput`].
+////////////////////////////////////////////////////////////////////////////////
+
+/// Reactive application's state.
+///
+/// Any changes to it automatically propagate to the appropriate subscribers.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct State {
+    /// [`argon2`] hash of password which protects access to this application's
+    /// public APIs.
+    pub password_hash: Mutable<Option<String>>,
+
+    /// All [`Restream`]s performed by this application.
+    pub restreams: Mutable<Vec<Restream>>,
+}
+
+impl State {
+    /// Applies the given [`Spec`] to this [`State`].
+    ///
+    /// If `replace` is `true` then all the [`Restream`]s, [`Restream::outputs`]
+    /// and [`Output::mixins`] will be replaced with new ones, otherwise new
+    /// ones will be merged with already existing ones.
+    pub fn apply(&self, new: Spec, replace: bool) {
+        let new = new.into_v1();
+        let mut restreams = self.restreams.lock_mut();
+        if replace {
+            let mut olds = mem::replace(
+                &mut *restreams,
+                Vec::with_capacity(new.restreams.len()),
+            );
+            for new in new.restreams {
+                if let Some(mut old) = olds
+                    .iter()
+                    .enumerate()
+                    .find_map(|(n, o)| (o.key == new.key).then(|| n))
+                    .map(|n| olds.swap_remove(n))
+                {
+                    old.apply(new, replace);
+                    restreams.push(old);
+                } else {
+                    restreams.push(Restream::new(new));
+                }
+            }
+        } else {
+            for new in new.restreams {
+                if let Some(old) =
+                    restreams.iter_mut().find(|o| o.key == new.key)
+                {
+                    old.apply(new, replace);
+                } else {
+                    restreams.push(Restream::new(new));
+                }
+            }
+        }
+    }
+
+    /// Exports this [`State`] as a [`spec::v1::Spec`].
     #[inline]
     #[must_use]
-    pub fn export(&self) -> spec::FailoverPushInput {
-        spec::FailoverPushInput {
-            name: self.name.clone(),
+    pub fn export(&self) -> Spec {
+        spec::v1::Spec {
+            restreams: self
+                .restreams
+                .get_cloned()
+                .iter()
+                .map(Restream::export)
+                .collect(),
+        }
+        .into()
+    }
+}
+
+/// Re-stream of a live stream from one `Input` to many `Output`s.
+#[derive(
+    Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
+)]
+pub struct Restream {
+    /// Unique key of this `Restream` identifying it, and used to form its
+    /// endpoints URLs.
+    pub key: RestreamKey,
+
+    /// Optional label of this `Restream`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<Label>,
+
+    /// `Input` that a live stream is received from.
+    pub input: Input,
+
+    /// `Output`s that a live stream is re-streamed to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<Output>,
+}
+
+impl Restream {
+    /// Creates a new [`Restream`] out of the given [`spec::v1::Restream`].
+    #[inline]
+    #[must_use]
+    pub fn new(spec: spec::v1::Restream) -> Self {
+        Self {
+            key: spec.key,
+            label: spec.label,
+            input: Input::new(spec.input),
+            outputs: spec.outputs.into_iter().map(Output::new).collect(),
+        }
+    }
+
+    /// Applies the given [`spec::v1::Restream`] to this [`Restream`].
+    ///
+    /// If `replace` is `true` then all the [`Restream::outputs`] will be
+    /// replaced with new ones, otherwise new ones will be merged with already
+    /// existing [`Restream::outputs`].
+    pub fn apply(&mut self, new: spec::v1::Restream, replace: bool) {
+        self.key = new.key;
+        self.label = new.label;
+        self.input.apply(new.input);
+        if replace {
+            let mut olds = mem::replace(
+                &mut self.outputs,
+                Vec::with_capacity(new.outputs.len()),
+            );
+            for new in new.outputs {
+                if let Some(mut old) = olds
+                    .iter()
+                    .enumerate()
+                    .find_map(|(n, o)| (o.dst == new.dst).then(|| n))
+                    .map(|n| olds.swap_remove(n))
+                {
+                    old.apply(new, replace);
+                    self.outputs.push(old);
+                } else {
+                    self.outputs.push(Output::new(new));
+                }
+            }
+        } else {
+            for new in new.outputs {
+                if let Some(old) =
+                    self.outputs.iter_mut().find(|o| o.dst == new.dst)
+                {
+                    old.apply(new, replace);
+                } else {
+                    self.outputs.push(Output::new(new));
+                }
+            }
+        }
+    }
+
+    /// Exports this [`Restream`] as a [`spec::v1::Restream`].
+    #[inline]
+    #[must_use]
+    pub fn export(&self) -> spec::v1::Restream {
+        spec::v1::Restream {
+            key: self.key.clone(),
+            label: self.label.clone(),
+            input: self.input.export(),
+            outputs: self.outputs.iter().map(Output::export).collect(),
         }
     }
 }
 
-/// Name of a [`PushInput`] to form its endpoint URLs with.
+/// Key of a [`Restream`] identifying it, and used to form its endpoints URLs.
 #[derive(Clone, Debug, Deref, Display, Eq, Into, PartialEq, Serialize)]
-pub struct InputName(String);
+pub struct RestreamKey(String);
 
-impl InputName {
-    /// Creates a new [`InputName`] if the given value meets its invariants.
+impl RestreamKey {
+    /// Creates a new [`RestreamKey`] if the given value meets its invariants.
     #[must_use]
     pub fn new<'s, S: Into<Cow<'s, str>>>(val: S) -> Option<Self> {
         static REGEX: Lazy<Regex> =
             Lazy::new(|| Regex::new("^[a-z0-9_-]{1,20}$").unwrap());
 
         let val = val.into();
-        (!val.is_empty() && !val.starts_with("pull_") && REGEX.is_match(&val))
+        (!val.is_empty() && REGEX.is_match(&val))
             .then(|| Self(val.into_owned()))
     }
 }
 
-impl<'de> Deserialize<'de> for InputName {
+impl<'de> Deserialize<'de> for RestreamKey {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         Self::new(<Cow<'_, str>>::deserialize(deserializer)?)
-            .ok_or_else(|| D::Error::custom("Not a valid Restream.input.name"))
+            .ok_or_else(|| D::Error::custom("Not a valid Restream.key"))
+    }
+}
+
+/// Type of `Restream`'s `key` identifying it, and used to form its endpoints
+/// URLs.
+///
+/// It should meet `[a-z0-9_-]{1,20}` format.
+#[graphql_scalar]
+impl<S> GraphQLScalar for RestreamKey
+where
+    S: ScalarValue,
+{
+    fn resolve(&self) -> Value {
+        Value::scalar(self.0.as_str().to_owned())
+    }
+
+    fn from_input_value(v: &InputValue) -> Option<Self> {
+        v.as_scalar()
+            .and_then(ScalarValue::as_str)
+            .and_then(Self::new)
+    }
+
+    fn from_str(value: ScalarToken<'_>) -> ParseScalarResult<'_, S> {
+        <String as ParseScalarValue<S>>::from_str(value)
+    }
+}
+
+impl PartialEq<str> for RestreamKey {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
     }
 }
 

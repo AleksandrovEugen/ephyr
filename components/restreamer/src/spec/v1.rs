@@ -10,6 +10,86 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 
 use crate::{serde::is_false, state};
 
+/// Shareable (exportable and importable) specification of a [`State`].
+///
+/// [`State`]: state::State
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Spec {
+    /// [`Restream`]s to be performed.
+    #[serde(deserialize_with = "Spec::deserialize_restreams")]
+    pub restreams: Vec<Restream>,
+}
+
+impl Spec {
+    /// Deserializes [`Spec::restreams`] ensuring its invariants preserved.
+    fn deserialize_outputs<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<Mixin>, D::Error> {
+        let restreams = Vec::deserialize(deserializer)?;
+
+        if !restreams.is_empty() {
+            let mut unique = HashSet::with_capacity(restreams.len());
+            for r in &restreams {
+                if let Some(key) = unique.replace(&r.key) {
+                    return Err(D::Error::custom(format!(
+                        "Duplicate Restream.key in Spec.restreams: {}",
+                        key,
+                    )));
+                }
+            }
+        }
+
+        Ok(restreams)
+    }
+}
+
+/// Shareable (exportable and importable) specification of a
+/// [`state::Restream`].
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Restream {
+    /// Unique key of this [`Restream`] identifying it, and used to form its
+    /// endpoints URLs.
+    pub key: state::RestreamKey,
+
+    /// Optional label of this [`Restream`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<state::Label>,
+
+    /// [`Input`] that a live stream is received from.
+    pub input: Input,
+
+    /// [`Output`]s that a live stream is re-streamed to.
+    #[serde(
+        default,
+        deserialize_with = "Output::deserialize_outputs",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub outputs: Vec<Output>,
+}
+
+impl Restream {
+    /// Deserializes [`Restream::outputs`] ensuring its invariants preserved.
+    fn deserialize_outputs<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<Mixin>, D::Error> {
+        let outputs = Vec::deserialize(deserializer)?;
+
+        if !outputs.is_empty() {
+            let mut unique = HashSet::with_capacity(outputs.len());
+            for o in &outputs {
+                if let Some(dst) = unique.replace(&o.dst) {
+                    return Err(D::Error::custom(format!(
+                        "Duplicate Output.dst in Restream.outputs: {}",
+                        dst,
+                    )));
+                }
+            }
+        }
+
+        Ok(outputs)
+    }
+}
+
 /// Shareable (exportable and importable) specification of a [`state::Input`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Input {
@@ -77,7 +157,7 @@ impl<'de> Deserialize<'de> for Input {
             }
 
             let mut unique_urls = HashSet::with_capacity(srcs.len());
-            let mut unique_keys = HashSet::with_capacity(srcs.len());
+            let mut unique_keys = HashSet::with_capacity(srcs.len() + 1);
             unique_keys.insert(&raw.key);
             for s in &srcs {
                 ensure_srcs_unique(s, &mut unique_urls, &mut unique_keys)?;
