@@ -29,309 +29,6 @@ use uuid::Uuid;
 use crate::{display_panic, serde::is_false, spec, srs, Spec};
 
 impl State {
-    /// Instantiates a new [`State`] reading it from a file (if any) and
-    /// performing all the required inner subscriptions.
-    ///
-    /// # Errors
-    ///
-    /// If [`State`] file exists, but fails to be parsed.
-    pub async fn try_new<P: AsRef<Path>>(
-        file: P,
-    ) -> Result<Self, anyhow::Error> {
-        let file = file.as_ref();
-
-        let mut contents = vec![];
-        let _ = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .read(true)
-            .open(&file)
-            .await
-            .map_err(|e| {
-                anyhow!("Failed to open '{}' file: {}", file.display(), e)
-            })?
-            .read_to_end(&mut contents)
-            .await
-            .map_err(|e| {
-                anyhow!("Failed to read '{}' file: {}", file.display(), e)
-            })?;
-
-        let state = if contents.is_empty() {
-            State::default()
-        } else {
-            serde_json::from_slice(&contents).map_err(|e| {
-                anyhow!(
-                    "Failed to deserialize state from '{}' file: {}",
-                    file.display(),
-                    e,
-                )
-            })?
-        };
-
-        let (file, persisted_state) = (file.to_owned(), state.clone());
-        let persist_state1 = move || {
-            fs::write(
-                file.clone(),
-                serde_json::to_vec(&persisted_state)
-                    .expect("Failed to serialize server state"),
-            )
-            .map_err(|e| log::error!("Failed to persist server state: {}", e))
-        };
-        let persist_state2 = persist_state1.clone();
-        Self::on_change("persist_restreams", &state.restreams, move |_| {
-            persist_state1()
-        });
-        Self::on_change(
-            "persist_password_hash",
-            &state.password_hash,
-            move |_| persist_state2(),
-        );
-
-        Ok(state)
-    }
-
-    /// Subscribes the specified `hook` to changes of the [`Mutable`] `val`ue.
-    ///
-    /// `name` is just a convenience for describing the `hook` in logs.
-    pub fn on_change<F, Fut, T>(name: &'static str, val: &Mutable<T>, hook: F)
-    where
-        F: FnMut(T) -> Fut + Send + 'static,
-        Fut: Future + Send + 'static,
-        T: Clone + PartialEq + Send + Sync + 'static,
-    {
-        drop(tokio::spawn(
-            AssertUnwindSafe(
-                val.signal_cloned().dedupe_cloned().to_stream().then(hook),
-            )
-            .catch_unwind()
-            .map_err(move |p| {
-                log::crit!(
-                    "Panicked executing `{}` hook of state: {}",
-                    name,
-                    display_panic(&p),
-                )
-            })
-            .map(|_| Ok(()))
-            .forward(sink::drain()),
-        ));
-    }
-
-    pub fn import_input(
-        &self,
-        id: Option<InputId>,
-        spec: spec::Restream,
-        replace: bool,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-
-        for r in &*restreams {
-            if id != Some(r.id)
-                && match (&r.input, &spec.input) {
-                    (Input::Push(i), spec::Input::Push(s)) => i.name == s.name,
-                    (Input::Push(i), spec::Input::FailoverPush(s)) => {
-                        i.name == s.name
-                    }
-                    (Input::FailoverPush(i), spec::Input::Push(s)) => {
-                        i.name == s.name
-                    }
-                    (Input::FailoverPush(i), spec::Input::FailoverPush(s)) => {
-                        i.name == s.name
-                    }
-                    (Input::Pull(i), spec::Input::Pull(s)) => i.src == s.src,
-                }
-            {
-                return Some(false);
-            }
-        }
-
-        if let Some(id) = update_id {
-            let r = restreams.iter_mut().find(|r| r.id == id)?;
-            if !r.input.is(&input) {
-                r.input = input;
-                r.srs_publisher_id = None;
-                // TODO: Remove when kicking playing clients is implemented?
-                for o in &mut r.outputs {
-                    o.status = Status::Offline;
-                }
-            }
-            r.label = label;
-        } else {
-            restreams.push(Restream {
-                id: InputId::random(),
-                label,
-                input,
-                outputs: vec![],
-                enabled: true,
-                srs_publisher_id: None,
-            });
-        }
-        Some(true)
-    }
-
-    /// Adds a new [`Restream`] with [`PullInput`] to this [`State`].
-    ///
-    /// If `update_id` is [`Some`] then updates an existing [`Restream`], if
-    /// any. So, returns [`None`] if no [`Restream`] with `update_id` exists.
-    #[must_use]
-    pub fn add_pull_input(
-        &self,
-        src: InputSrcUrl,
-        label: Option<Label>,
-        update_id: Option<InputId>,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-
-        for r in &*restreams {
-            if let Input::Pull(i) = &r.input {
-                if src == i.src && update_id != Some(r.id) {
-                    return Some(false);
-                }
-            }
-        }
-
-        Self::add_input_to(
-            &mut *restreams,
-            Input::Pull(PullInput {
-                src,
-                status: Status::Offline,
-            }),
-            label,
-            update_id,
-        )
-    }
-
-    /// Adds a new [`Restream`] with [`PushInput`] (or [`FailoverPushInput`]) to
-    /// this [`State`].
-    ///
-    /// If `failover` is `true`, then adds a [`FailoverPushInput`] intead of a
-    /// regular [`PushInput`].
-    ///
-    /// If `update_id` is [`Some`] then updates an existing [`Restream`], if
-    /// any. So, returns [`None`] if no [`Restream`] with `update_id` exists.
-    #[must_use]
-    pub fn add_push_input(
-        &self,
-        name: InputName,
-        failover: bool,
-        label: Option<Label>,
-        update_id: Option<InputId>,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-
-        for r in &*restreams {
-            if let Input::Push(i) = &r.input {
-                if name == i.name && update_id != Some(r.id) {
-                    return Some(false);
-                }
-            }
-        }
-
-        Self::add_input_to(
-            &mut *restreams,
-            if failover {
-                Input::FailoverPush(FailoverPushInput {
-                    name,
-                    main_status: Status::Offline,
-                    main_srs_publisher_id: None,
-                    backup_status: Status::Offline,
-                    backup_srs_publisher_id: None,
-                    status: Status::Offline,
-                })
-            } else {
-                Input::Push(PushInput {
-                    name,
-                    status: Status::Offline,
-                })
-            },
-            label,
-            update_id,
-        )
-    }
-
-    /// Adds a new [`Restream`] with the given [`Input`] to this [`State`].
-    ///
-    /// If `update_id` is [`Some`] then updates an existing [`Restream`], if
-    /// any. So, returns [`None`] if no [`Restream`] with `update_id` exists.
-    fn add_input_to(
-        restreams: &mut Vec<Restream>,
-        input: Input,
-        label: Option<Label>,
-        update_id: Option<InputId>,
-    ) -> Option<bool> {
-        if let Some(id) = update_id {
-            let r = restreams.iter_mut().find(|r| r.id == id)?;
-            if !r.input.is(&input) {
-                r.input = input;
-                r.srs_publisher_id = None;
-                // TODO: Remove when kicking playing clients is implemented?
-                for o in &mut r.outputs {
-                    o.status = Status::Offline;
-                }
-            }
-            r.label = label;
-        } else {
-            restreams.push(Restream {
-                id: InputId::random(),
-                label,
-                input,
-                outputs: vec![],
-                enabled: true,
-                srs_publisher_id: None,
-            });
-        }
-        Some(true)
-    }
-
-    /// Removes [`Restream`] with the given `id` from this [`State`].
-    ///
-    /// Returns `true` if it has been removed, or `false` if doesn't exist.
-    #[must_use]
-    pub fn remove_input(&self, id: InputId) -> bool {
-        let mut restreams = self.restreams.lock_mut();
-        let prev_len = restreams.len();
-        restreams.retain(|r| r.id != id);
-        restreams.len() != prev_len
-    }
-
-    /// Enables [`Restream`] with the given `id` in this [`State`].
-    ///
-    /// Returns `true` if it has been enabled, or `false` if it already has been
-    /// enabled.
-    #[must_use]
-    pub fn enable_input(&self, id: InputId) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let input = restreams.iter_mut().find(|r| r.id == id)?;
-
-        if input.enabled {
-            return Some(false);
-        }
-
-        input.enabled = true;
-        Some(true)
-    }
-
-    /// Disables [`Restream`] with the given `id` in this [`State`].
-    ///
-    /// Returns `true` if it has been disabled, or `false` if it already has
-    /// been disabled.
-    #[must_use]
-    pub fn disable_input(&self, id: InputId) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let input = restreams.iter_mut().find(|r| r.id == id)?;
-
-        if !input.enabled {
-            return Some(false);
-        }
-
-        input.enabled = false;
-        input.srs_publisher_id = None;
-        if let Input::FailoverPush(input) = &mut input.input {
-            input.main_srs_publisher_id = None;
-            input.backup_srs_publisher_id = None;
-        }
-        Some(true)
-    }
-
     /// Adds new [`Output`] to the specified [`Restream`] of this [`State`].
     ///
     /// Returns [`None`] if no [`Restream`] with `input_id` exists.
@@ -783,6 +480,67 @@ pub struct State {
 }
 
 impl State {
+    /// Instantiates a new [`State`] reading it from a `file` (if any) and
+    /// performing all the required inner subscriptions.
+    ///
+    /// # Errors
+    ///
+    /// If [`State`] file exists, but fails to be parsed.
+    pub async fn try_new<P: AsRef<Path>>(
+        file: P,
+    ) -> Result<Self, anyhow::Error> {
+        let file = file.as_ref();
+
+        let mut contents = vec![];
+        let _ = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .read(true)
+            .open(&file)
+            .await
+            .map_err(|e| {
+                anyhow!("Failed to open '{}' file: {}", file.display(), e)
+            })?
+            .read_to_end(&mut contents)
+            .await
+            .map_err(|e| {
+                anyhow!("Failed to read '{}' file: {}", file.display(), e)
+            })?;
+
+        let state = if contents.is_empty() {
+            State::default()
+        } else {
+            serde_json::from_slice(&contents).map_err(|e| {
+                anyhow!(
+                    "Failed to deserialize state from '{}' file: {}",
+                    file.display(),
+                    e,
+                )
+            })?
+        };
+
+        let (file, persisted_state) = (file.to_owned(), state.clone());
+        let persist_state1 = move || {
+            fs::write(
+                file.clone(),
+                serde_json::to_vec(&persisted_state)
+                    .expect("Failed to serialize server state"),
+            )
+            .map_err(|e| log::error!("Failed to persist server state: {}", e))
+        };
+        let persist_state2 = persist_state1.clone();
+        Self::on_change("persist_restreams", &state.restreams, move |_| {
+            persist_state1()
+        });
+        Self::on_change(
+            "persist_password_hash",
+            &state.password_hash,
+            move |_| persist_state2(),
+        );
+
+        Ok(state)
+    }
+
     /// Applies the given [`Spec`] to this [`State`].
     ///
     /// If `replace` is `true` then all the [`Restream`]s, [`Restream::outputs`]
@@ -836,6 +594,114 @@ impl State {
         }
         .into()
     }
+
+    /// Subscribes the specified `hook` to changes of the [`Mutable`] `val`ue.
+    ///
+    /// `name` is just a convenience for describing the `hook` in logs.
+    pub fn on_change<F, Fut, T>(name: &'static str, val: &Mutable<T>, hook: F)
+    where
+        F: FnMut(T) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+        T: Clone + PartialEq + Send + Sync + 'static,
+    {
+        drop(tokio::spawn(
+            AssertUnwindSafe(
+                val.signal_cloned().dedupe_cloned().to_stream().then(hook),
+            )
+            .catch_unwind()
+            .map_err(move |p| {
+                log::crit!(
+                    "Panicked executing `{}` hook of state: {}",
+                    name,
+                    display_panic(&p),
+                )
+            })
+            .map(|_| Ok(()))
+            .forward(sink::drain()),
+        ));
+    }
+
+    /// Adds a new [`Restream`] by the given `spec` to this [`State`].
+    ///
+    /// # Errors
+    ///
+    /// If this [`State`] has a [`Restream`] with such `key` already.
+    pub fn add_restream(&self, spec: spec::v1::Restream) -> anyhow::Result<()> {
+        let mut restreams = self.restreams.lock_mut();
+
+        if restreams.iter().find(|r| r.key == spec.key).is_some() {
+            return Err(anyhow!("Restream.key '{}' is used already", spec.key));
+        }
+
+        restreams.push(Restream::new(spec));
+        OK(())
+    }
+
+    /// Edits a [`Restream`] this [`State`] identified by the given `spec`.
+    ///
+    /// Returns [`None`] if there is no [`Restream`] with such `key` in this
+    /// [`State`].
+    ///
+    /// # Errors
+    ///
+    /// If this [`State`] has a [`Restream`] with such `key` already.
+    pub fn edit_restream(
+        &self,
+        id: RestreamId,
+        spec: spec::v1::Restream,
+    ) -> anyhow::Result<Option<()>> {
+        let mut restreams = self.restreams.lock_mut();
+
+        if restreams
+            .iter()
+            .find(|r| r.key == spec.key && r.id != id)
+            .is_some()
+        {
+            return Err(anyhow!("Restream.key '{}' is used already", spec.key));
+        }
+
+        Ok(restreams
+            .iter_mut()
+            .find(|r| r.id == id)
+            .map(|r| r.apply(spec, false)))
+    }
+
+    /// Removes a [`Restream`] with the given `id` from this [`State`].
+    ///
+    /// Returns [`None`] if there is no [`Restream`] with such `key` in this
+    /// [`State`].
+    pub fn remove_restream(&self, id: RestreamId) -> Option<()> {
+        let mut restreams = self.restreams.lock_mut();
+        let prev_len = restreams.len();
+        restreams.retain(|r| r.id != id);
+        (restreams.len() != prev_len).then(|| ())
+    }
+
+    /// Enables a [`Restream`] with the given `id` in this [`State`].
+    ///
+    /// Returns `true` if it has been enabled, or `false` if it already has been
+    /// enabled, or [`None`] if it doesn't exist.
+    #[must_use]
+    pub fn enable_restream(&self, id: RestreamId) -> Option<bool> {
+        self.restreams
+            .lock_mut()
+            .iter_mut()
+            .find(|r| r.id == id)
+            .map(|r| r.input.enable())
+    }
+
+    /// Disables a [`Restream`] with the given `id` in this [`State`].
+    ///
+    /// Returns `true` if it has been disabled, or `false` if it already has
+    /// been disabled, or [`None`] if it doesn't exist.
+    #[must_use]
+    pub fn disable_restream(&self, id: RestreamId) -> Option<bool> {
+        self.restreams
+            .lock_mut()
+            .iter_mut()
+            .find(|r| r.id == id)
+            .map(|r| r.input.disable())
+    }
 }
 
 /// Re-stream of a live stream from one `Input` to many `Output`s.
@@ -843,6 +709,11 @@ impl State {
     Clone, Debug, Deserialize, Eq, GraphQLObject, PartialEq, Serialize,
 )]
 pub struct Restream {
+    /// Unique ID of this `Input`.
+    ///
+    /// Once assigned, it never changes.
+    pub id: RestreamId,
+
     /// Unique key of this `Restream` identifying it, and used to form its
     /// endpoints URLs.
     pub key: RestreamKey,
@@ -865,6 +736,7 @@ impl Restream {
     #[must_use]
     pub fn new(spec: spec::v1::Restream) -> Self {
         Self {
+            id: RestreamId::random(),
             key: spec.key,
             label: spec.label,
             input: Input::new(spec.input),
@@ -922,6 +794,31 @@ impl Restream {
             input: self.input.export(),
             outputs: self.outputs.iter().map(Output::export).collect(),
         }
+    }
+}
+
+/// ID of a `Restream`.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Display,
+    Eq,
+    From,
+    GraphQLScalarValue,
+    Into,
+    PartialEq,
+    Serialize,
+)]
+pub struct RestreamId(Uuid);
+
+impl RestreamId {
+    /// Generates a new random [`RestreamId`].
+    #[inline]
+    #[must_use]
+    pub fn random() -> Self {
+        Self(Uuid::new_v4())
     }
 }
 
@@ -990,6 +887,8 @@ impl PartialEq<str> for RestreamKey {
 )]
 pub struct Input {
     /// Unique ID of this `Input`.
+    ///
+    /// Once assigned, it never changes.
     pub id: InputId,
 
     /// Key of this `Input` to expose its endpoint with for accepting and
@@ -1025,6 +924,14 @@ pub struct Input {
     #[graphql(skip)]
     #[serde(skip)]
     pub srs_publisher_id: Option<srs::ClientId>,
+
+    /// IDs of [SRS]s client who plays a live stream from this [`Input`] (either
+    /// an external client or a local process).
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    #[graphql(skip)]
+    #[serde(skip)]
+    pub srs_player_ids: Vec<srs::ClientId>,
 }
 
 impl Input {
@@ -1039,6 +946,7 @@ impl Input {
             enabled: spec.enabled,
             status: Status::Offline,
             srs_publisher_id: None,
+            srs_player_ids: vec![]
         }
     }
 
@@ -1046,6 +954,20 @@ impl Input {
     ///
     /// Replaces all the [`Input::srcs`] with new ones.
     pub fn apply(&mut self, new: spec::v1::Input) {
+        if self.key != new.key
+            || (self.srcs.is_empty() && !new.srcs.is_empty())
+            || (!self.srcs.is_empty() && new.srcs.is_empty())
+        {
+            // SRS endpoint has changed, or push/pull type has been switched, so
+            // we should kick the publisher.
+            self.srs_publisher_id = None;
+
+        }
+        if self.key != new.key {
+            // SRS endpoint has changed, so we should kick all the players.
+            self.srs_player_ids = vec![];
+        }
+
         self.key = new.key;
         self.enabled = new.enabled;
 
@@ -1075,6 +997,44 @@ impl Input {
             srcs: self.srcs.iter().map(InputSrc::export).collect(),
             enabled: self.enabled,
         }
+    }
+
+    /// Enables this [`Input`].
+    ///
+    /// Returns `false` if it has been enabled already.
+    #[must_use]
+    pub fn enable(&mut self) -> bool {
+        let mut changed = !self.enabled;
+
+        self.enabled = true;
+
+        for src in &mut self.srcs {
+            if let Some(InputSrc::Local(input)) = src {
+                changed |= input.enable();
+            }
+        }
+
+        changed
+    }
+
+    /// Disables this [`Input`].
+    ///
+    /// Returns `false` if it has been disabled already.
+    #[must_use]
+    pub fn disable(&mut self) -> bool {
+        let mut changed = self.enabled;
+
+        self.enabled = false;
+        self.srs_publisher_id = None;
+        self.srs_player_ids = vec![];
+
+        for src in &mut self.srcs {
+            if let Some(InputSrc::Local(input)) = src {
+                changed |= input.disable();
+            }
+        }
+
+        changed
     }
 }
 
@@ -1298,6 +1258,8 @@ where
 )]
 pub struct Output {
     /// Unique ID of this `Output`.
+    ///
+    /// Once assigned, it never changes.
     pub id: OutputId,
 
     /// Downstream URL to re-stream a live stream onto.
@@ -1500,6 +1462,8 @@ where
 )]
 pub struct Mixin {
     /// Unique ID of this `Mixin`.
+    ///
+    /// Once assigned, it never changes.
     pub id: MixinId,
 
     /// URL of the source to be mixed with an `Output`.

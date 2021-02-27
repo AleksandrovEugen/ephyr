@@ -25,18 +25,18 @@
 pub mod api;
 pub mod cli;
 pub mod ffmpeg;
+pub mod serde;
 pub mod server;
 pub mod spec;
 pub mod srs;
 pub mod state;
-pub mod serde;
 pub mod teamspeak;
 
 use std::{any::Any, mem};
 
 use ephyr_log::slog;
 
-pub use self::{state::State, spec::Spec};
+pub use self::{spec::Spec, state::State};
 
 /// Runs application.
 ///
