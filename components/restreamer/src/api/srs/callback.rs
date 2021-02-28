@@ -54,13 +54,23 @@ pub enum Event {
     /// [SRS]: https://github.com/ossrs/srs
     OnConnect,
 
-    /// [SRS] client publishes new RTMP stream.
+    /// [SRS] client publishes a new RTMP stream.
     ///
     /// [SRS]: https://github.com/ossrs/srs
     OnPublish,
 
-    /// [SRS] client stops publishing RTMP stream.
+    /// [SRS] client stops publishing its RTMP stream.
     ///
     /// [SRS]: https://github.com/ossrs/srs
     OnUnpublish,
+
+    /// [SRS] client plays an existing RTMP stream.
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    OnPlay,
+
+    /// [SRS] client stops playing an existing RTMP stream.
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    OnStop,
 }

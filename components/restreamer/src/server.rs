@@ -111,8 +111,8 @@ pub mod client {
     /// # Playground
     ///
     /// If [`cli::Opts::debug`] is specified then additionally serves
-    /// [GraphQL Playground][2] on `/playground` endpoint with no authorization
-    /// required.
+    /// [GraphQL Playground][2] on `/api/playground` endpoint with no
+    /// authorization required.
     ///
     /// # Errors
     ///
@@ -231,9 +231,9 @@ pub mod callback {
     use ephyr_log::log;
 
     use crate::{
-        api,
+        api::srs::callback,
         cli::{Failure, Opts},
-        state::{Input, State, Status},
+        state::{Input, InputSrc, State, Status},
     };
 
     /// Runs HTTP server for exposing [SRS] [HTTP Callback API][1] on `/`
@@ -272,170 +272,168 @@ pub mod callback {
     /// [1]: https://github.com/ossrs/srs/wiki/v3_EN_HTTPCallback
     #[post("/")]
     async fn callback(
-        req: web::Json<api::srs::callback::Request>,
+        req: web::Json<callback::Request>,
         state: web::Data<State>,
     ) -> Result<&'static str, Error> {
-        use api::srs::callback::Event;
         match req.action {
-            Event::OnConnect => on_connect(&req, &*state)?,
-            Event::OnPublish => on_publish(&req, &*state)?,
-            Event::OnUnpublish => on_unpublish(&req, &*state)?,
+            callback::Event::OnConnect => on_connect(&req, &*state)?,
+            callback::Event::OnPublish => on_start(&req, &*state, true)?,
+            callback::Event::OnUnpublish => on_stop(&req, &*state, true)?,
+            callback::Event::OnPlay => on_start(&req, &*state, false)?,
+            callback::Event::OnStop => on_stop(&req, &*state, false)?,
         }
         Ok("0")
     }
 
-    /// Handles [`api::srs::callback::Event::OnConnect`].
+    /// Handles [`callback::Event::OnConnect`].
     ///
-    /// Only checks whether the appropriate [`state::Restream::input`] exists.
+    /// Only checks whether the appropriate [`state::Restream`] exists and its
+    /// [`Input`] is enabled.
     ///
     /// # Errors
     ///
-    /// If [`api::srs::callback::Request::app`] matches no existing
-    /// [`state::Restream`].
+    /// If [`callback::Request::app`] matches no existing [`state::Restream`].
     ///
     /// [`state::Restream`]: crate::state::Restream
-    fn on_connect(
-        req: &api::srs::callback::Request,
-        state: &State,
-    ) -> Result<(), Error> {
-        let restreams = state.restreams.get_cloned();
-        let _ = restreams
+    fn on_connect(req: &callback::Request, state: &State) -> Result<(), Error> {
+        state
+            .restreams
+            .get_cloned()
             .iter()
-            .find(|r| r.enabled && r.uses_srs_app(&req.app))
-            .ok_or_else(|| error::ErrorNotFound("Such `app` doesn't exist"))?;
-        Ok(())
+            .find(|r| r.input.enabled && r.key == *req.app)
+            .ok_or_else(|| error::ErrorNotFound("Such `app` doesn't exist"))
+            .map(|_| ())
     }
 
-    /// Handles [`api::srs::callback::Event::OnPublish`].
+    /// Handles [`callback::Event::OnPublish`] and [`callback::Event::OnPlay`].
     ///
-    /// Updates the appropriate [`state::Restream::input`] to
-    /// [`Status::Online`].
+    /// Updates the appropriate [`state::Restream`]'s [`Input`] to
+    /// [`Status::Online`] (if [`callback::Event::OnPublish`]) and remembers the
+    /// connected [SRS] client.
     ///
     /// # Errors
     ///
-    /// - If [`api::srs::callback::Request::app`] or
-    ///   [`api::srs::callback::Request::stream`] matches no existing
-    ///   [`state::Restream`].
-    /// - If [`state::Restream`] with [`PullInput`] is tried to be published
-    ///   by external client.
+    /// - If [`callback::Request::app`] or [`callback::Request::stream`] matches
+    ///   no existing enabled [`Input`].
+    /// - If [`Input`] is not allowed to be published by external client.
     ///
-    /// [`PullInput`]: crate::state::PullInput
     /// [`state::Restream`]: crate::state::Restream
-    fn on_publish(
-        req: &api::srs::callback::Request,
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    fn on_start(
+        req: &callback::Request,
         state: &State,
+        publishing: bool,
     ) -> Result<(), Error> {
         let endpoint = req.stream.as_deref().unwrap_or_default();
-        if !matches!(endpoint, "in" | "main" | "backup") {
-            return Err(error::ErrorNotFound("Such `stream` doesn't exist"));
-        }
 
         let mut restreams = state.restreams.lock_mut();
         let restream = restreams
             .iter_mut()
-            .find(|r| r.enabled && r.uses_srs_app(&req.app))
+            .find(|r| r.input.enabled && r.key == *req.app)
             .ok_or_else(|| error::ErrorNotFound("Such `app` doesn't exist"))?;
 
-        if !restream.input.is_failover() && endpoint != "in" {
-            return Err(error::ErrorNotFound("Such `stream` doesn't exist"));
+        /// Traverses the given [`Input`] and all its [`Input::srcs`] looking
+        /// for the one matching the specified `stream` and being enabled.
+        #[must_use]
+        fn lookup_input<'i>(
+            input: &'i mut Input,
+            stream: &str,
+        ) -> Option<&'i mut Input> {
+            if input.key == *stream {
+                return input.enabled.then(|| input);
+            }
+            input.srcs.iter_mut().find_map(|i| {
+                if let InputSrc::Local(input) = i {
+                    lookup_input(input, stream)
+                } else {
+                    None
+                }
+            })
         }
 
-        if restream.input.is_pull() && !req.ip.is_loopback() {
-            return Err(error::ErrorForbidden("`app` is allowed only locally"));
-        }
+        let input =
+            lookup_input(&mut restream.input, endpoint).ok_or_else(|| {
+                error::ErrorNotFound("Such `stream` doesn't exist")
+            })?;
 
-        if let Input::FailoverPush(input) = &mut restream.input {
-            match endpoint {
-                "main" => {
-                    if input.main_srs_publisher_id.as_ref().map(|id| **id)
-                        != Some(req.client_id)
-                    {
-                        input.main_srs_publisher_id =
-                            Some(req.client_id.into());
-                    }
-                    input.main_status = Status::Online;
-                    return Ok(());
-                }
-                "backup" => {
-                    if input.backup_srs_publisher_id.as_ref().map(|id| **id)
-                        != Some(req.client_id)
-                    {
-                        input.backup_srs_publisher_id =
-                            Some(req.client_id.into());
-                    }
-                    input.backup_status = Status::Online;
-                    return Ok(());
-                }
-                "in" if !req.ip.is_loopback() => {
-                    return Err(error::ErrorForbidden(
-                        "`app` is allowed only locally",
-                    ));
-                }
-                _ => (),
+        if publishing {
+            if !input.srcs.is_empty() && !req.ip.is_loopback() {
+                return Err(error::ErrorForbidden(
+                    "Such `stream` is allowed only locally",
+                ));
+            }
+
+            if input.srs_publisher_id.as_ref().map(|id| **id)
+                != Some(req.client_id)
+            {
+                input.srs_publisher_id = Some(req.client_id.into());
+            }
+            input.status = Status::Online;
+        } else {
+            // `srs::ClientId` kicks the client when `Drop`ped, so we should be
+            // careful here to not accidentally kick the client by creating a
+            // temporary binding.
+            if !input.srs_player_ids.contains(&req.client_id) {
+                let _ = input.srs_player_ids.insert(req.client_id.into());
             }
         }
-
-        if restream.srs_publisher_id.as_ref().map(|id| **id)
-            != Some(req.client_id)
-        {
-            restream.srs_publisher_id = Some(req.client_id.into());
-        }
-        restream.input.set_status(Status::Online);
         Ok(())
     }
 
-    /// Handles [`api::srs::callback::Event::OnUnpublish`].
+    /// Handles [`callback::Event::OnUnpublish`].
     ///
-    /// Updates the appropriate [`state::Restream::input`] to
+    /// Updates the appropriate [`state::Restream`]'s [`Input`] to
     /// [`Status::Offline`].
     ///
     /// # Errors
     ///
-    /// If [`api::srs::callback::Request::app`] matches no existing
-    /// [`state::Restream`].
+    /// If [`callback::Request::app`] or [`callback::Request::stream`] matches
+    /// no existing [`Input`].
     ///
-    /// [`PullInput`]: crate::state::PullInput
     /// [`state::Restream`]: crate::state::Restream
-    fn on_unpublish(
-        req: &api::srs::callback::Request,
+    fn on_stop(
+        req: &callback::Request,
         state: &State,
+        publishing: bool,
     ) -> Result<(), Error> {
         let endpoint = req.stream.as_deref().unwrap_or_default();
 
         let mut restreams = state.restreams.lock_mut();
         let restream = restreams
             .iter_mut()
-            .find(|r| r.uses_srs_app(&req.app))
+            .find(|r| r.key == *req.app)
             .ok_or_else(|| error::ErrorNotFound("Such `app` doesn't exist"))?;
 
-        if restream.input.is_pull() {
-            // For `PullInput` `Status::Offline` is managed by its FFmpeg
-            // process.
-            restream.srs_publisher_id = None;
-            return Ok(());
-        }
-
-        if let Input::FailoverPush(input) = &mut restream.input {
-            match endpoint {
-                "main" => {
-                    input.main_srs_publisher_id = None;
-                    input.main_status = Status::Offline;
-                    return Ok(());
-                }
-                "backup" => {
-                    input.backup_srs_publisher_id = None;
-                    input.backup_status = Status::Offline;
-                    return Ok(());
-                }
-                _ => (),
+        /// Traverses the given [`Input`] and all its [`Input::srcs`] looking
+        /// for the one matching the specified `stream`.
+        #[must_use]
+        fn lookup_input<'i>(
+            input: &'i mut Input,
+            stream: &str,
+        ) -> Option<&'i mut Input> {
+            if input.key == *stream {
+                return Some(input);
             }
+            input.srcs.iter_mut().find_map(|i| {
+                if let InputSrc::Local(input) = i {
+                    lookup_input(input, stream)
+                } else {
+                    None
+                }
+            })
         }
 
-        restream.srs_publisher_id = None;
-        // For `FailoverPushInput` `Status::Offline` is managed by its FFmpeg
-        // process.
-        if !restream.input.is_failover() {
-            restream.input.set_status(Status::Offline);
+        let input =
+            lookup_input(&mut restream.input, endpoint).ok_or_else(|| {
+                error::ErrorNotFound("Such `stream` doesn't exist")
+            })?;
+
+        if publishing {
+            input.srs_publisher_id = None;
+            input.status = Status::Offline;
+        } else {
+            let _ = input.srs_player_ids.remove(&req.client_id);
         }
         Ok(())
     }

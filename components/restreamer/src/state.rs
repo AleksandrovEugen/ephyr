@@ -1,7 +1,7 @@
 //! Application state.
 
 use std::{
-    borrow::Cow, convert::TryInto, future::Future, mem,
+    borrow::Cow, collections::HashSet, convert::TryInto, future::Future, mem,
     panic::AssertUnwindSafe, path::Path, time::Duration,
 };
 
@@ -910,7 +910,7 @@ pub struct Input {
     /// [SRS]: https://github.com/ossrs/srs
     #[graphql(skip)]
     #[serde(skip)]
-    pub srs_player_ids: Vec<srs::ClientId>,
+    pub srs_player_ids: HashSet<srs::ClientId>,
 }
 
 impl Input {
@@ -925,7 +925,7 @@ impl Input {
             enabled: spec.enabled,
             status: Status::Offline,
             srs_publisher_id: None,
-            srs_player_ids: vec![],
+            srs_player_ids: HashSet::new(),
         }
     }
 
@@ -941,9 +941,11 @@ impl Input {
             // we should kick the publisher.
             self.srs_publisher_id = None;
         }
-        if self.key != new.key {
-            // SRS endpoint has changed, so we should kick all the players.
-            self.srs_player_ids = vec![];
+        if self.key != new.key || (!self.srcs.is_empty() && new.srcs.is_empty())
+        {
+            // SRS endpoint has changed, or switched to push type, so we should
+            // kick all the players.
+            self.srs_player_ids = HashSet::new();
         }
 
         self.key = new.key;

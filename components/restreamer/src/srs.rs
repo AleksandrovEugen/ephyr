@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
+    borrow::Borrow,
 };
 
 use anyhow::anyhow;
@@ -164,6 +165,13 @@ impl Deref for ClientId {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &*self.0
+    }
+}
+
+impl Borrow<u32> for ClientId {
+    #[inline]
+    fn borrow(&self) -> &u32 {
+        &*self
     }
 }
 
