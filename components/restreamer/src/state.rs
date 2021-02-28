@@ -28,242 +28,6 @@ use uuid::Uuid;
 
 use crate::{display_panic, serde::is_false, spec, srs, Spec};
 
-impl State {
-    /// Adds new [`Output`] to the specified [`Restream`] of this [`State`].
-    ///
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists.
-    #[must_use]
-    pub fn add_new_output(
-        &self,
-        input_id: InputId,
-        output_dst: OutputDstUrl,
-        label: Option<Label>,
-        mix_with: Option<MixinSrcUrl>,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let outputs =
-            &mut restreams.iter_mut().find(|r| r.id == input_id)?.outputs;
-
-        if outputs.iter_mut().any(|o| o.dst == output_dst) {
-            return Some(false);
-        }
-
-        outputs.push(Output {
-            id: OutputId::random(),
-            dst: output_dst,
-            label,
-            volume: Volume::ORIGIN,
-            mixins: mix_with
-                .map(|url| {
-                    let delay = (url.scheme() == "ts")
-                        .then(|| Delay::from_millis(3500))
-                        .flatten()
-                        .unwrap_or_default();
-                    vec![Mixin {
-                        id: MixinId::random(),
-                        src: url,
-                        volume: Volume::ORIGIN,
-                        delay,
-                    }]
-                })
-                .unwrap_or_default(),
-            enabled: false,
-            status: Status::Offline,
-        });
-        Some(true)
-    }
-
-    /// Removes [`Output`] from the specified [`Restream`] of this [`State`].
-    ///
-    /// Returns `true` if it has been removed, or `false` if doesn't exist.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists.
-    #[must_use]
-    pub fn remove_output(
-        &self,
-        input_id: InputId,
-        output_id: OutputId,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let outputs =
-            &mut restreams.iter_mut().find(|r| r.id == input_id)?.outputs;
-
-        let prev_len = outputs.len();
-        outputs.retain(|o| o.id != output_id);
-        Some(outputs.len() != prev_len)
-    }
-
-    /// Enables [`Output`] in the specified [`Restream`] of this [`State`].
-    ///
-    /// Returns `true` if it has been enabled, or `false` if it already has been
-    /// enabled.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists.
-    #[must_use]
-    pub fn enable_output(
-        &self,
-        input_id: InputId,
-        output_id: OutputId,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let output = restreams
-            .iter_mut()
-            .find(|r| r.id == input_id)?
-            .outputs
-            .iter_mut()
-            .find(|o| o.id == output_id)?;
-
-        if output.enabled {
-            return Some(false);
-        }
-
-        output.enabled = true;
-        Some(true)
-    }
-
-    /// Disables [`Output`] in the specified [`Restream`] of this [`State`].
-    ///
-    /// Returns `true` if it has been disabled, or `false` if it already has
-    /// been disabled.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists.
-    #[must_use]
-    pub fn disable_output(
-        &self,
-        input_id: InputId,
-        output_id: OutputId,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let output = restreams
-            .iter_mut()
-            .find(|r| r.id == input_id)?
-            .outputs
-            .iter_mut()
-            .find(|o| o.id == output_id)?;
-
-        if !output.enabled {
-            return Some(false);
-        }
-
-        output.enabled = false;
-        Some(true)
-    }
-
-    /// Enables all [`Output`]s in the specified [`Restream`] of this [`State`].
-    ///
-    /// Returns `true` if at least one has been enabled, or `false` if all of
-    /// them already have been enabled.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists.
-    #[must_use]
-    pub fn enable_all_outputs(&self, input_id: InputId) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        Some(
-            restreams
-                .iter_mut()
-                .find(|r| r.id == input_id)?
-                .outputs
-                .iter_mut()
-                .filter(|o| !o.enabled)
-                .fold(false, |_, o| {
-                    o.enabled = true;
-                    true
-                }),
-        )
-    }
-
-    /// Disables all [`Output`]s in the specified [`Restream`] of this
-    /// [`State`].
-    ///
-    /// Returns `true` if at least one has been disabled, or `false` if all of
-    /// them already have been disabled.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists.
-    #[must_use]
-    pub fn disable_all_outputs(&self, input_id: InputId) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        Some(
-            restreams
-                .iter_mut()
-                .find(|r| r.id == input_id)?
-                .outputs
-                .iter_mut()
-                .filter(|o| o.enabled)
-                .fold(false, |_, o| {
-                    o.enabled = false;
-                    true
-                }),
-        )
-    }
-
-    /// Tunes a [`Volume`] rate of the specified [`Output`] or its [`Mixin`] in
-    /// this [`State`].
-    ///
-    /// Returns `true` if a [`Volume`] rate has been changed, or `false` if it
-    /// has the same value already.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists, or no
-    /// [`Output`] with `output_id` exist, or no [`Mixin`] with `mixin_id`
-    /// exists.
-    #[must_use]
-    pub fn tune_volume(
-        &self,
-        input_id: InputId,
-        output_id: OutputId,
-        mixin_id: Option<MixinId>,
-        volume: Volume,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let output = restreams
-            .iter_mut()
-            .find(|r| r.id == input_id)?
-            .outputs
-            .iter_mut()
-            .find(|o| o.id == output_id)?;
-
-        let curr_volume = if let Some(id) = mixin_id {
-            &mut output.mixins.iter_mut().find(|m| m.id == id)?.volume
-        } else {
-            &mut output.volume
-        };
-
-        if *curr_volume == volume {
-            return Some(false);
-        }
-
-        *curr_volume = volume;
-        Some(true)
-    }
-
-    /// Tunes a [`Delay`] of the specified [`Mixin`] in this [`State`].
-    ///
-    /// Returns `true` if a [`Delay`] has been changed, or `false` if it has the
-    /// same value already.
-    /// Returns [`None`] if no [`Restream`] with `input_id` exists, or no
-    /// [`Output`] with `output_id` exist, or no [`Mixin`] with `mixin_id`
-    /// exists.
-    #[must_use]
-    pub fn tune_delay(
-        &self,
-        input_id: InputId,
-        output_id: OutputId,
-        mixin_id: MixinId,
-        delay: Delay,
-    ) -> Option<bool> {
-        let mut restreams = self.restreams.lock_mut();
-        let mixin = restreams
-            .iter_mut()
-            .find(|r| r.id == input_id)?
-            .outputs
-            .iter_mut()
-            .find(|o| o.id == output_id)?
-            .mixins
-            .iter_mut()
-            .find(|m| m.id == mixin_id)?;
-
-        if mixin.delay == delay {
-            return Some(false);
-        }
-
-        mixin.delay = delay;
-        Some(true)
-    }
-}
-
 impl Restream {
     /// Returns an URL of the remote server that this [`Restream`] receives a
     /// live stream from, if any.
@@ -546,8 +310,7 @@ impl State {
     /// If `replace` is `true` then all the [`Restream`]s, [`Restream::outputs`]
     /// and [`Output::mixins`] will be replaced with new ones, otherwise new
     /// ones will be merged with already existing ones.
-    pub fn apply(&self, new: Spec, replace: bool) {
-        let new = new.into_v1();
+    pub fn apply(&self, new: spec::v1::Spec, replace: bool) {
         let mut restreams = self.restreams.lock_mut();
         if replace {
             let mut olds = mem::replace(
@@ -629,7 +392,7 @@ impl State {
     pub fn add_restream(&self, spec: spec::v1::Restream) -> anyhow::Result<()> {
         let mut restreams = self.restreams.lock_mut();
 
-        if restreams.iter().find(|r| r.key == spec.key).is_some() {
+        if restreams.iter().any(|r| r.key == spec.key) {
             return Err(anyhow!("Restream.key '{}' is used already", spec.key));
         }
 
@@ -652,11 +415,7 @@ impl State {
     ) -> anyhow::Result<Option<()>> {
         let mut restreams = self.restreams.lock_mut();
 
-        if restreams
-            .iter()
-            .find(|r| r.key == spec.key && r.id != id)
-            .is_some()
-        {
+        if restreams.iter().any(|r| r.key == spec.key && r.id != id) {
             return Err(anyhow!("Restream.key '{}' is used already", spec.key));
         }
 
@@ -668,7 +427,7 @@ impl State {
 
     /// Removes a [`Restream`] with the given `id` from this [`State`].
     ///
-    /// Returns [`None`] if there is no [`Restream`] with such `key` in this
+    /// Returns [`None`] if there is no [`Restream`] with such `id` in this
     /// [`State`].
     pub fn remove_restream(&self, id: RestreamId) -> Option<()> {
         let mut restreams = self.restreams.lock_mut();
@@ -701,6 +460,226 @@ impl State {
             .iter_mut()
             .find(|r| r.id == id)
             .map(|r| r.input.disable())
+    }
+
+    /// Adds a new [`Output`] to the specified [`Restream`] of this [`State`].
+    ///
+    /// Returns [`None`] if there is no [`Restream`] with such `id` in this
+    /// [`State`].
+    ///
+    /// # Errors
+    ///
+    /// If the [`Restream`] has an [`Output`] with such `dst` already.
+    pub fn add_new_output(
+        &self,
+        restream_id: RestreamId,
+        spec: spec::v1::Output,
+    ) -> anyhow::Result<Option<()>> {
+        let mut restreams = self.restreams.lock_mut();
+
+        let outputs = if let Some(r) =
+            restreams.iter_mut().find(|r| r.id == restream_id)
+        {
+            &mut r.outputs
+        } else {
+            return Ok(None);
+        };
+
+        if outputs.iter().any(|o| o.dst == spec.dst) {
+            return Err(anyhow!("Output.dst '{}' is used already", dst));
+        }
+
+        outputs.push(Output::new(spec));
+        Ok(Some(()))
+    }
+
+    /// Removes an [`Output`] with the given `id` from the specified
+    /// [`Restream`] of this [`State`].
+    ///
+    /// Returns [`None`] if there is no [`Restream`] with such `restream_id` or
+    /// no [`Output`] with such `id` in this [`State`].
+    #[must_use]
+    pub fn remove_output(
+        &self,
+        id: OutputId,
+        restream_id: RestreamId,
+    ) -> Option<()> {
+        let mut restreams = self.restreams.lock_mut();
+        let outputs =
+            &mut restreams.iter_mut().find(|r| r.id == restream_id)?.outputs;
+
+        let prev_len = outputs.len();
+        outputs.retain(|o| o.id != id);
+        (outputs.len() != prev_len).then(|| ())
+    }
+
+    /// Enables an [`Output`] with the given `id` in the specified [`Restream`]
+    /// of this [`State`].
+    ///
+    /// Returns `true` if it has been enabled, or `false` if it already has been
+    /// enabled, or [`None`] if it doesn't exist.
+    #[must_use]
+    pub fn enable_output(
+        &self,
+        id: OutputId,
+        restream_id: RestreamId,
+    ) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+        let output = restreams
+            .iter_mut()
+            .find(|r| r.id == restream_id)?
+            .outputs
+            .iter_mut()
+            .find(|o| o.id == id)?;
+
+        if output.enabled {
+            return Some(false);
+        }
+
+        output.enabled = true;
+        Some(true)
+    }
+
+    /// Disables an [`Output`] with the given `id` in the specified [`Restream`]
+    /// of this [`State`].
+    ///
+    /// Returns `true` if it has been disabled, or `false` if it already has
+    /// been disabled, or [`None`] if it doesn't exist.
+    #[must_use]
+    pub fn disable_output(
+        &self,
+        id: OutputId,
+        restream_id: RestreamId,
+    ) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+        let output = restreams
+            .iter_mut()
+            .find(|r| r.id == restream_id)?
+            .outputs
+            .iter_mut()
+            .find(|o| o.id == id)?;
+
+        if !output.enabled {
+            return Some(false);
+        }
+
+        output.enabled = false;
+        Some(true)
+    }
+
+    /// Enables all [`Output`]s in the specified [`Restream`] of this [`State`].
+    ///
+    /// Returns `true` if at least one [`Output`] has been enabled, or `false`
+    /// if all of them already have been enabled, or [`None`] if no [`Restream`]
+    /// with such `restream_id` exists.
+    #[must_use]
+    pub fn enable_all_outputs(&self, restream_id: RestreamId) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+        Some(
+            restreams
+                .iter_mut()
+                .find(|r| r.id == restream_id)?
+                .outputs
+                .iter_mut()
+                .filter(|o| !o.enabled)
+                .fold(false, |_, o| {
+                    o.enabled = true;
+                    true
+                }),
+        )
+    }
+
+    /// Disables all [`Output`]s in the specified [`Restream`] of this
+    /// [`State`].
+    ///
+    /// Returns `true` if at least one [`Output`] has been disabled, or `false`
+    /// if all of them already have been disabled, or [`None`] if no
+    /// [`Restream`] with such `restream_id` exists.
+    #[must_use]
+    pub fn disable_all_outputs(&self, restream_id: RestreamId) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+        Some(
+            restreams
+                .iter_mut()
+                .find(|r| r.id == restream_id)?
+                .outputs
+                .iter_mut()
+                .filter(|o| o.enabled)
+                .fold(false, |_, o| {
+                    o.enabled = false;
+                    true
+                }),
+        )
+    }
+
+    /// Tunes a [`Volume`] rate of the specified [`Output`] or its [`Mixin`] in
+    /// this [`State`].
+    ///
+    /// Returns `true` if a [`Volume`] rate has been changed, or `false` if it
+    /// has the same value already.
+    ///
+    /// Returns [`None`] if no such [`Restream`]/[`Output`]/[`Mixin`] exists.
+    #[must_use]
+    pub fn tune_volume(
+        &self,
+        restream_id: RestreamId,
+        output_id: OutputId,
+        mixin_id: Option<MixinId>,
+        volume: Volume,
+    ) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+        let output = restreams
+            .iter_mut()
+            .find(|r| r.id == restream_id)?
+            .outputs
+            .iter_mut()
+            .find(|o| o.id == output_id)?;
+
+        let curr_volume = if let Some(id) = mixin_id {
+            &mut output.mixins.iter_mut().find(|m| m.id == id)?.volume
+        } else {
+            &mut output.volume
+        };
+
+        if *curr_volume == volume {
+            return Some(false);
+        }
+
+        *curr_volume = volume;
+        Some(true)
+    }
+
+    /// Tunes a [`Delay`] of the specified [`Mixin`] in this [`State`].
+    ///
+    /// Returns `true` if a [`Delay`] has been changed, or `false` if it has the
+    /// same value already.
+    ///
+    /// Returns [`None`] if no such [`Restream`]/[`Output`]/[`Mixin`] exists.
+    #[must_use]
+    pub fn tune_delay(
+        &self,
+        input_id: RestreamId,
+        output_id: OutputId,
+        mixin_id: MixinId,
+        delay: Delay,
+    ) -> Option<bool> {
+        let mut restreams = self.restreams.lock_mut();
+        let mixin = restreams
+            .iter_mut()
+            .find(|r| r.id == input_id)?
+            .outputs
+            .iter_mut()
+            .find(|o| o.id == output_id)?
+            .mixins
+            .iter_mut()
+            .find(|m| m.id == mixin_id)?;
+
+        if mixin.delay == delay {
+            return Some(false);
+        }
+
+        mixin.delay = delay;
+        Some(true)
     }
 }
 
@@ -946,7 +925,7 @@ impl Input {
             enabled: spec.enabled,
             status: Status::Offline,
             srs_publisher_id: None,
-            srs_player_ids: vec![]
+            srs_player_ids: vec![],
         }
     }
 
@@ -961,7 +940,6 @@ impl Input {
             // SRS endpoint has changed, or push/pull type has been switched, so
             // we should kick the publisher.
             self.srs_publisher_id = None;
-
         }
         if self.key != new.key {
             // SRS endpoint has changed, so we should kick all the players.
