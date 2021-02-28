@@ -69,14 +69,14 @@ impl RestreamersPool {
     ///
     /// [FFmpeg]: https://ffmpeg.org
     pub fn apply(&mut self, restreams: &[state::Restream]) {
-        if restreams.is_empty() {
-            return;
-        }
-
         // The most often case is when one new FFmpeg process is added.
-        let mut new = HashMap::with_capacity(self.pool.len() + 1);
+        let mut new_pool = HashMap::with_capacity(self.pool.len() + 1);
 
         for r in restreams {
+            let _ = self.apply_input(&r.key, &r.input, &mut new_pool);
+
+
+            todo!()
             if !r.enabled {
                 continue;
             }
@@ -126,7 +126,42 @@ impl RestreamersPool {
             }
         }
 
-        self.pool = new;
+        self.pool = new_pool;
+    }
+
+    /// Traverses the given [`state::Input`] filling the `new_pool` with
+    /// required [FFmpeg] re-streaming processes. Tries to preserve already
+    /// running [FFmpeg] processes in its `pool` as much as possible.
+    ///
+    /// [FFmpeg]: https://ffmpeg.org
+    fn apply_input(
+        &mut self,
+        key: &state::RestreamKey,
+        input: &state::Input,
+        new_pool: &mut HashMap<Uuid, Restreamer>,
+    ) -> Option<()> {
+        for s in &input.srcs {
+            if let state::InputSrc::Local(i) = s {
+                let _ = self.apply_input(key, i, new);
+            }
+        }
+
+        let new_kind = RestreamerKind::from_input(input, key)?;
+
+        let process = self
+            .pool
+            .remove(&input.id.into())
+            .and_then(|mut p| (!p.kind.needs_restart(&new_kind)).then(|| p))
+            .unwrap_or_else(|| {
+                Restreamer::run(
+                    self.ffmpeg_path.clone(),
+                    kind: new_kind,
+                    self.state.clone(),
+                )
+            });
+
+        drop(new_pool.insert(input.id.into(), process));
+        Some(())
     }
 }
 
@@ -146,6 +181,110 @@ pub struct Restreamer {
     /// [FFmpeg]: https://ffmpeg.org
     kind: RestreamerKind,
 }
+
+/// Data of a concrete kind of a running [FFmpeg] process performing a
+/// re-streaming, that allows to spawn and re-spawn it at any time.
+///
+/// [FFmpeg]: https://ffmpeg.org
+#[derive(Clone, Debug, From)]
+pub enum RestreamerKind {
+    /// Re-streaming of a live stream from one URL endpoint to another one "as
+    /// is", without performing any live stream modifications, optionally
+    /// transmuxing it to the destination format.
+    Copy(CopyRestreamer),
+}
+
+impl RestreamerKind {
+    /// Creates a new [FFmpeg] process re-streaming a [`state::InputSrc`] to its
+    /// [`state::Input`] endpoint.
+    ///
+    /// Returns [`None`] if a [FFmpeg] re-streaming process cannot not be
+    /// created for the given [`state::Input`], or the later doesn't require it.
+    ///
+    /// [FFmpeg]: https://ffmpeg.org
+    #[must_use]
+    pub fn from_input(
+        input: &state::Input,
+        key: &state::RestreamKey,
+    ) -> Option<Self> {
+        if !input.enabled || input.srcs.is_empty() {
+            return None;
+        }
+
+        input
+            .srcs
+            .iter()
+            .find(|s| matches!(s, state::InputSrc::Remote(_)))
+            .map(|remote| remote.url.clone().into())
+            .or_else(|| {
+                input.srcs.iter().find_map(|s| {
+                    if let state::InputSrc::Local(
+                        input
+                        @
+                        state::Input {
+                            status: Status::Online,
+                            ..
+                        },
+                    ) = s
+                    {
+                        Some(input.rtmp_endpoint_url(key).into())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .map(|from_url| {
+                CopyRestreamer {
+                    id: input.id.into(),
+                    from_url,
+                    to_url: input.rtmp_endpoint_url(key),
+                }
+                .into()
+            })
+    }
+
+    /// Checks whether this [`Restreamer`] must be restarted, as cannot apply
+    /// the new `actual` params on itself correctly, without interruptions.
+    #[inline]
+    #[must_use]
+    pub fn needs_restart(&self, actual: &Self) -> bool {
+        match (self, actual) {
+            (Self::Copy(old), Self::Copy(new)) => old.needs_restart(new),
+            _ => true,
+        }
+    }
+}
+
+/// Kind of a [FFmpeg] re-streaming process that re-streams a live stream from
+/// one URL endpoint to another one "as is", without performing any live stream
+/// modifications, optionally transmuxing it to the destination format.
+///
+/// [FFmpeg]: https://ffmpeg.org
+#[derive(Clone, Debug)]
+pub struct CopyRestreamer {
+    /// ID of an element in a [`State`] this [`CopyRestreamer`] process is
+    /// related to.
+    pub id: Uuid,
+
+    /// [`Url`] to pull a live stream from.
+    pub from_url: Url,
+
+    /// [`Url`] to publish the pulled live stream onto.
+    pub to_url: Url,
+}
+
+impl CopyRestreamer {
+    /// Checks whether this [`CopyRestreamer`] process must be restarted, as
+    /// cannot apply the new `actual` params on itself correctly, without
+    /// interruptions.
+    #[inline]
+    #[must_use]
+    pub fn needs_restart(&self, actual: &Self) -> bool {
+        self.from_url != actual.from_url || self.to_url != actual.to_url
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 impl Restreamer {
     /// Creates a new [`Restreamer`] spawning the actual [FFmpeg] process in
@@ -249,7 +388,7 @@ impl Restreamer {
 ///
 /// [FFmpeg]: https://ffmpeg.org
 #[derive(Clone, Debug, From)]
-pub enum RestreamerKind {
+pub enum RestreamerKind2 {
     /// Re-streaming of a live stream from [`FailoverPushInput`]'s `/main` or
     /// `/backup` endpoint to its `/in` endpoint.
     ///
@@ -282,7 +421,7 @@ pub enum RestreamerKind {
     TeamspeakMixedOutput(TeamspeakMixedOutputRestreamer),
 }
 
-impl RestreamerKind {
+impl RestreamerKind2 {
     /// Creates a new [FFmpeg] process re-streaming a live stream from some
     /// source to the [`Restream::srs_url`] endpoint.
     ///

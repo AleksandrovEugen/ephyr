@@ -774,6 +774,16 @@ impl Restream {
             outputs: self.outputs.iter().map(Output::export).collect(),
         }
     }
+
+    /// Returns an URL on a local [SRS] server of the endpoint representing a
+    /// main [`Input`] in this [`Restream`].
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    #[inline]
+    #[must_use]
+    pub fn main_input_rtmp_endpoint_url(&self) -> Url {
+        self.input.rtmp_endpoint_url(&self.key)
+    }
 }
 
 /// ID of a `Restream`.
@@ -1006,7 +1016,7 @@ impl Input {
 
         self.enabled = false;
         self.srs_publisher_id = None;
-        self.srs_player_ids = vec![];
+        self.srs_player_ids = HashSet::new();
 
         for src in &mut self.srcs {
             if let Some(InputSrc::Local(input)) = src {
@@ -1015,6 +1025,16 @@ impl Input {
         }
 
         changed
+    }
+
+    /// Returns an URL on a local [SRS] server of the endpoint representing this
+    /// [`Input`] in the given `restream`.
+    ///
+    /// [SRS]: https://github.com/ossrs/srs
+    #[must_use]
+    pub fn rtmp_endpoint_url(&self, restream: &RestreamKey) -> Url {
+        Url::parse(format!("rtmp://127.0.0.1:1935/{}/{}", restream, self.key))
+            .unwrap()
     }
 }
 
